@@ -20,6 +20,7 @@ Git-native desktop Markdown workspace.
 - Onboarding connect flow supports local folder + optional remote URL login (system credentials or HTTPS user/token)
 - Connect flow can open existing repo, initialize local repo, or clone remote into an empty local folder
 - Automatic fallback for systems without Git: start a local demo workspace from onboarding
+- Demo mode can be started directly from onboarding and from the main repository toolbar
 - Non-interactive Git auth checks (`GIT_TERMINAL_PROMPT=0`) to avoid hanging credential prompts
 - Credential-safe error handling with masking for URL-embedded secrets
 - Empty-repo bootstrap: initializes required project structure (markdown + folders) automatically

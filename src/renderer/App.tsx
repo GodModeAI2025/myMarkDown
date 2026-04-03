@@ -1707,24 +1707,25 @@ export default function App(): JSX.Element {
           </div>
 
           <div className="onboarding-actions">
-            {!runtimeInfo.gitAvailable ? (
-              <button onClick={startDemoMode} disabled={busy}>
-                {tt('Start Demo Mode', 'Demo-Modus starten')}
-              </button>
-            ) : null}
+            <button onClick={startDemoMode} disabled={busy}>
+              {tt('Start Demo Mode', 'Demo-Modus starten')}
+            </button>
             <button className="primary" onClick={completeOnboarding} disabled={busy}>
               {tt('Connect Repository', 'Repository verbinden')}
             </button>
           </div>
 
-          {!runtimeInfo.gitAvailable ? (
-            <p className="onboarding-note">
-              {tt(
-                'Git was not detected on this system. You can still use myMarkDown in demo mode.',
-                'Auf diesem System wurde kein Git erkannt. Du kannst myMarkDown trotzdem im Demo-Modus verwenden.'
-              )}
-            </p>
-          ) : null}
+          <p className="onboarding-note">
+            {!runtimeInfo.gitAvailable
+              ? tt(
+                  'Git was not detected on this system. You can still use myMarkDown in demo mode.',
+                  'Auf diesem System wurde kein Git erkannt. Du kannst myMarkDown trotzdem im Demo-Modus verwenden.'
+                )
+              : tt(
+                  'Demo mode is also available even when Git is installed.',
+                  'Demo-Modus ist auch verfügbar, wenn Git installiert ist.'
+                )}
+          </p>
         </section>
       </div>
     );
@@ -1775,6 +1776,9 @@ export default function App(): JSX.Element {
           disabled={busy}
         >
           {tt('Open Repository', 'Repository öffnen')}
+        </button>
+        <button onClick={startDemoMode} disabled={busy}>
+          {tt('Demo Mode', 'Demo-Modus')}
         </button>
         <button onClick={() => refreshStatus(true)} disabled={busy || !isRepoOpen}>
           {tt('Refresh Status', 'Status aktualisieren')}
