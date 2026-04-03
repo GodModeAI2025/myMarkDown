@@ -32,11 +32,15 @@ Git-native desktop Markdown workspace.
 - Stable one-time app menu subscription (reduced event re-subscription churn)
 - Extended parser/unit coverage for repository-state derivation logic
 - Dedicated settings section for app configuration (language, theme, remote, default branch)
+- Separate utility windows for Settings and Workflows (native Electron windows instead of in-page overlay)
+- View menu entries and toolbar actions to open Settings/Workflow windows directly
+- Robust utility-window routing via query/hash window mode (`?window=...` / `#window=...`)
 - Local draft autosave + recovery prompt per repository/file
 - Sidecar comments in `.comments/<escaped-target>.comments.json`
 - CODEOWNERS path hints for changed/active markdown files
 - Policy/auth-aware Git error hints (protected branch, auth, non-fast-forward, conflicts)
 - Release gate: release blocked while open comments exist in scope
+- Editor empty-state guidance with direct actions when no markdown file is active
 
 ## Run
 ```bash

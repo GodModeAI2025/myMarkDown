@@ -73,6 +73,12 @@ const api = {
   openDemoWorkspace(): Promise<AppResult<OpenRepositoryResult>> {
     return ipcRenderer.invoke('app:openDemoWorkspace');
   },
+  openSettingsWindow(): Promise<AppResult<boolean>> {
+    return ipcRenderer.invoke('app:openSettingsWindow');
+  },
+  openWorkflowWindow(): Promise<AppResult<boolean>> {
+    return ipcRenderer.invoke('app:openWorkflowWindow');
+  },
   onMenuAction(listener: (action: AppMenuAction) => void): () => void {
     const channel = 'app:menuAction';
     const wrapped = (_event: Electron.IpcRendererEvent, action: AppMenuAction) => {

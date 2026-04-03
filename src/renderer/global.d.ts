@@ -48,6 +48,8 @@ declare global {
       setUpstream(options: GitRemoteTarget): Promise<AppResult<string>>;
       pickRepositoryDirectory(): Promise<AppResult<string | null>>;
       openDemoWorkspace(): Promise<AppResult<OpenRepositoryResult>>;
+      openSettingsWindow(): Promise<AppResult<boolean>>;
+      openWorkflowWindow(): Promise<AppResult<boolean>>;
       onMenuAction(listener: (action: AppMenuAction) => void): () => void;
       stage(paths: string[]): Promise<AppResult<null>>;
       unstage(paths: string[]): Promise<AppResult<null>>;

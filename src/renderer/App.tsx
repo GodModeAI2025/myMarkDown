@@ -26,6 +26,9 @@ type ReleaseScopeType = 'active' | 'all';
 type Locale = 'de' | 'en';
 type ThemeMode = 'light' | 'dark';
 type RightSidebarTab = 'comments' | 'outline' | 'insights';
+type SettingsWindowMode = 'settings' | 'workflows';
+type ControlTab = 'sync' | 'branch' | 'changes' | 'commit' | 'release' | 'search';
+type AppWindowKind = 'main' | 'settings' | 'workflows';
 
 type HeadingItem = {
   line: number;
@@ -57,7 +60,102 @@ type MenuRuntimeState = {
   refreshIncomingDelta: () => void;
 };
 
+type QuickIconKind = 'repo' | 'save' | 'search' | 'sync' | 'workflow' | 'left' | 'right' | 'zen' | 'settings';
+
 const SETUP_CONFIG_KEY = 'mymarkdown:setup:v1';
+const WORKFLOW_TAB_KEY = 'mymarkdown:workflow-tab:v1';
+
+function QuickIcon({ kind }: { kind: QuickIconKind }): JSX.Element {
+  const commonProps = {
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const
+  };
+
+  switch (kind) {
+    case 'repo':
+      return (
+        <svg {...commonProps} aria-hidden="true">
+          <path d="M3 7.5h6l2 2H21v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <path d="M3 7.5v-1A2.5 2.5 0 0 1 5.5 4h3L10 6h3" />
+        </svg>
+      );
+    case 'save':
+      return (
+        <svg {...commonProps} aria-hidden="true">
+          <path d="M5 4h11l3 3v13H5z" />
+          <path d="M8 4v6h7V4" />
+          <path d="M8 18h8" />
+        </svg>
+      );
+    case 'search':
+      return (
+        <svg {...commonProps} aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="5.5" />
+          <path d="M15 15l4.5 4.5" />
+        </svg>
+      );
+    case 'sync':
+      return (
+        <svg {...commonProps} aria-hidden="true">
+          <path d="M20 8a7 7 0 0 0-12-2" />
+          <path d="M8 6V3H5" />
+          <path d="M4 16a7 7 0 0 0 12 2" />
+          <path d="M16 18v3h3" />
+        </svg>
+      );
+    case 'workflow':
+      return (
+        <svg {...commonProps} aria-hidden="true">
+          <rect x="3.5" y="5" width="17" height="14" rx="2.5" />
+          <path d="M8 9h8" />
+          <path d="M8 12h8" />
+          <path d="M8 15h5" />
+        </svg>
+      );
+    case 'left':
+      return (
+        <svg {...commonProps} aria-hidden="true">
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M10 5v14" />
+        </svg>
+      );
+    case 'right':
+      return (
+        <svg {...commonProps} aria-hidden="true">
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M14 5v14" />
+        </svg>
+      );
+    case 'zen':
+      return (
+        <svg {...commonProps} aria-hidden="true">
+          <circle cx="12" cy="12" r="7" />
+          <path d="M12 7v10" />
+          <path d="M7 12h10" />
+        </svg>
+      );
+    case 'settings':
+      return (
+        <svg {...commonProps} aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 3.5v2.2" />
+          <path d="M12 18.3v2.2" />
+          <path d="M3.5 12h2.2" />
+          <path d="M18.3 12h2.2" />
+          <path d="M6.1 6.1l1.6 1.6" />
+          <path d="M16.3 16.3l1.6 1.6" />
+          <path d="M17.9 6.1l-1.6 1.6" />
+          <path d="M7.7 16.3l-1.6 1.6" />
+        </svg>
+      );
+    default:
+      return <span />;
+  }
+}
 
 function statusLabel(entry: GitStatusEntry): string {
   return `${entry.indexStatus}${entry.workTreeStatus}`.trim();
@@ -179,6 +277,43 @@ function persistSetupConfig(config: SetupConfig): void {
   }
 }
 
+function isControlTab(value: string): value is ControlTab {
+  return ['sync', 'branch', 'changes', 'commit', 'release', 'search'].includes(value);
+}
+
+function loadWorkflowTabPreference(): ControlTab {
+  const value = localStorage.getItem(WORKFLOW_TAB_KEY);
+  if (value && isControlTab(value)) {
+    return value;
+  }
+
+  return 'changes';
+}
+
+function persistWorkflowTabPreference(tab: ControlTab): void {
+  try {
+    localStorage.setItem(WORKFLOW_TAB_KEY, tab);
+  } catch {
+    // Ignore local storage errors.
+  }
+}
+
+function detectAppWindowKind(): AppWindowKind {
+  const searchParams = new URLSearchParams(window.location.search);
+  const hashValue = window.location.hash.replace(/^#/, '');
+  const hashParams = new URLSearchParams(hashValue.includes('=') ? hashValue : '');
+  const target = searchParams.get('window') ?? hashParams.get('window') ?? (hashValue === 'settings' || hashValue === 'workflows' ? hashValue : null);
+  if (target === 'settings') {
+    return 'settings';
+  }
+
+  if (target === 'workflows') {
+    return 'workflows';
+  }
+
+  return 'main';
+}
+
 export default function App(): JSX.Element {
   const editorMountRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<ToastEditor | null>(null);
@@ -202,8 +337,11 @@ export default function App(): JSX.Element {
     refreshIncomingDelta: () => {}
   });
   const initialSetupConfig = useMemo(() => loadSetupConfig(), []);
+  const appWindowKind = useMemo(() => detectAppWindowKind(), []);
+  const utilityWindowMode: SettingsWindowMode = appWindowKind === 'workflows' ? 'workflows' : 'settings';
+  const isMainWindow = appWindowKind === 'main';
 
-  const [showOnboarding, setShowOnboarding] = useState(() => initialSetupConfig === null);
+  const [showOnboarding, setShowOnboarding] = useState(() => isMainWindow && initialSetupConfig === null);
   const [showAdvancedPanels, setShowAdvancedPanels] = useState(loadAdvancedPanelsVisibility);
   const [zenMode, setZenMode] = useState(loadZenMode);
   const [repoInput, setRepoInput] = useState(initialSetupConfig?.repositoryPath ?? '');
@@ -231,7 +369,9 @@ export default function App(): JSX.Element {
   const [newBranchFromRef, setNewBranchFromRef] = useState('HEAD');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResult, setSearchResult] = useState<MarkdownSearchResult | null>(null);
-  const [controlTab, setControlTab] = useState<'sync' | 'branch' | 'search'>('sync');
+  const [controlTab, setControlTab] = useState<ControlTab>(() =>
+    appWindowKind === 'workflows' ? loadWorkflowTabPreference() : 'sync'
+  );
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
   const [showRightSidebar, setShowRightSidebar] = useState(true);
   const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>('comments');
@@ -295,7 +435,14 @@ export default function App(): JSX.Element {
 
   const openCommentsInPanel = comments.filter((comment) => comment.state === 'open').length;
   const headingItems = useMemo(() => extractHeadings(editorSnapshot), [editorSnapshot]);
-  const windowTitle = activeMarkdownPath ? fileNameFromPath(activeMarkdownPath) : tt('Workspace', 'Arbeitsbereich');
+  const windowTitle =
+    appWindowKind === 'settings'
+      ? tt('Settings', 'Einstellungen')
+      : appWindowKind === 'workflows'
+        ? tt('Workflow Center', 'Workflow-Center')
+        : activeMarkdownPath
+          ? fileNameFromPath(activeMarkdownPath)
+          : tt('Workspace', 'Arbeitsbereich');
 
   const editorInsights = useMemo(() => {
     const plain = editorSnapshot.replace(/```[\s\S]*?```/g, ' ');
@@ -404,11 +551,11 @@ export default function App(): JSX.Element {
         persistConfig: false
       });
 
-      if (!opened) {
+      if (!opened && isMainWindow) {
         setShowOnboarding(true);
       }
     })();
-  }, [showOnboarding, repoInput]);
+  }, [showOnboarding, repoInput, isMainWindow]);
 
   useEffect(() => {
     localStorage.setItem('mymarkdown:locale', locale);
@@ -439,6 +586,21 @@ export default function App(): JSX.Element {
   }, [isDemoMode, controlTab]);
 
   useEffect(() => {
+    persistWorkflowTabPreference(controlTab);
+  }, [controlTab]);
+
+  useEffect(() => {
+    if (appWindowKind !== 'workflows' || controlTab !== 'search') {
+      return;
+    }
+
+    const timer = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [appWindowKind, controlTab]);
+
+  useEffect(() => {
     if (showOnboarding || !status?.repositoryPath) {
       return;
     }
@@ -452,6 +614,39 @@ export default function App(): JSX.Element {
       configuredAt: new Date().toISOString()
     });
   }, [showOnboarding, status?.repositoryPath, remoteInput, branchInput, onboardingRemoteUrl, onboardingAuthMode]);
+
+  useEffect(() => {
+    const root = document.querySelector('.workspace-shell');
+    if (!root) {
+      return;
+    }
+
+    const interactiveElements = root.querySelectorAll<HTMLElement>('button, input, select, textarea');
+    interactiveElements.forEach((element) => {
+      if (element.getAttribute('title')) {
+        return;
+      }
+
+      const ariaLabel = element.getAttribute('aria-label')?.trim();
+      if (ariaLabel) {
+        element.setAttribute('title', ariaLabel);
+        return;
+      }
+
+      if (
+        (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) &&
+        element.placeholder.trim().length > 0
+      ) {
+        element.setAttribute('title', element.placeholder.trim());
+        return;
+      }
+
+      const text = element.textContent?.trim();
+      if (text) {
+        element.setAttribute('title', text);
+      }
+    });
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -468,9 +663,9 @@ export default function App(): JSX.Element {
 
       const editor = new Editor({
         el: editorMountRef.current,
-        height: '420px',
+        height: '100%',
         initialEditType: 'wysiwyg',
-        previewStyle: 'vertical',
+        previewStyle: 'tab',
         usageStatistics: false,
         hideModeSwitch: true,
         placeholder: tt('Select a markdown file and start editing...', 'Wähle eine Markdown-Datei und starte die Bearbeitung...')
@@ -546,19 +741,30 @@ export default function App(): JSX.Element {
           }
           break;
         case 'focus-search':
-          setZenMode(false);
+          if (appWindowKind === 'main') {
+            persistWorkflowTabPreference('search');
+            void window.myMarkdown.openWorkflowWindow();
+            break;
+          }
+
           setShowAdvancedPanels(true);
           setControlTab('search');
           window.setTimeout(() => searchInputRef.current?.focus(), 0);
           break;
         case 'toggle-zen-mode':
-          setZenMode((previous) => !previous);
+          if (appWindowKind === 'main') {
+            setZenMode((previous) => !previous);
+          }
           break;
         case 'toggle-left-sidebar':
-          setShowLeftSidebar((previous) => !previous);
+          if (appWindowKind === 'main') {
+            setShowLeftSidebar((previous) => !previous);
+          }
           break;
         case 'toggle-right-sidebar':
-          setShowRightSidebar((previous) => !previous);
+          if (appWindowKind === 'main') {
+            setShowRightSidebar((previous) => !previous);
+          }
           break;
         default:
           break;
@@ -633,6 +839,33 @@ export default function App(): JSX.Element {
       const message = error instanceof Error ? error.message : String(error);
       setNotice({ kind: 'error', text: `${tt('Unexpected error', 'Unerwarteter Fehler')}: ${message}` });
       return null;
+    }
+  }
+
+  async function openSettingsWindow(closeCurrentWindow = false): Promise<void> {
+    const opened = await runQuery(() => window.myMarkdown.openSettingsWindow());
+    if (opened === null) {
+      return;
+    }
+
+    if (closeCurrentWindow && appWindowKind !== 'main') {
+      window.close();
+    }
+  }
+
+  async function openWorkflowWindow(preferredTab?: ControlTab, closeCurrentWindow = false): Promise<void> {
+    if (preferredTab) {
+      persistWorkflowTabPreference(preferredTab);
+      setControlTab(preferredTab);
+    }
+
+    const opened = await runQuery(() => window.myMarkdown.openWorkflowWindow());
+    if (opened === null) {
+      return;
+    }
+
+    if (closeCurrentWindow && appWindowKind !== 'main') {
+      window.close();
     }
   }
 
@@ -1605,6 +1838,425 @@ export default function App(): JSX.Element {
     setBusy(false);
   }
 
+  function renderUtilityWorkspace(windowMode: SettingsWindowMode): JSX.Element {
+    return (
+      <section className="settings-menu panel workspace-strip utility-window-panel">
+        <div className="settings-menu-header">
+          <div>
+            <h2>{windowMode === 'settings' ? tt('Settings', 'Einstellungen') : tt('Workflow Center', 'Workflow-Center')}</h2>
+            <p className="muted">
+              {tt('Workspace mode', 'Workspace-Modus')}: {isDemoMode ? tt('Demo', 'Demo') : tt('Git', 'Git')} | {tt('Identity', 'Identität')}:{' '}
+              {gitIdentity}
+            </p>
+          </div>
+          <div className="settings-menu-actions">
+            {windowMode === 'settings' ? (
+              <button onClick={() => void openWorkflowWindow(controlTab, true)} disabled={busy || isDemoMode}>
+                {tt('Open Workflows', 'Workflows öffnen')}
+              </button>
+            ) : (
+              <button onClick={() => void openSettingsWindow(true)} disabled={busy}>
+                {tt('Open Settings', 'Einstellungen öffnen')}
+              </button>
+            )}
+            <button
+              className={showAdvancedPanels ? 'active-mode' : ''}
+              onClick={() => setShowAdvancedPanels((value) => !value)}
+              disabled={busy}
+            >
+              {tt('Advanced', 'Erweitert')}
+            </button>
+            <button onClick={() => window.close()} disabled={busy}>
+              {tt('Close', 'Schließen')}
+            </button>
+          </div>
+        </div>
+
+        {windowMode === 'settings' ? (
+          <section className="repo-open">
+            <input
+              ref={repoInputRef}
+              value={repoInput}
+              onChange={(event) => setRepoInput(event.target.value)}
+              placeholder={tt('/absolute/path/to/repository', '/absoluter/pfad/zum/repository')}
+            />
+            <button onClick={pickRepositoryAndOpen} disabled={busy}>
+              {tt('Browse', 'Durchsuchen')}
+            </button>
+            <button
+              className="primary"
+              onClick={() => {
+                void openRepository(undefined, {
+                  showOpenSuccessNotice: true,
+                  bootstrapIfEmpty: false,
+                  persistConfig: true
+                });
+              }}
+              disabled={busy}
+            >
+              {tt('Open Repository', 'Repository öffnen')}
+            </button>
+            <button onClick={startDemoMode} disabled={busy}>
+              {tt('Demo Mode', 'Demo-Modus')}
+            </button>
+            <button onClick={() => refreshStatus(true)} disabled={busy || !isRepoOpen}>
+              {tt('Refresh Status', 'Status aktualisieren')}
+            </button>
+          </section>
+        ) : null}
+
+        {windowMode === 'workflows' ? (
+          <section className="status-bar">
+            <span>
+              <strong>{tt('Branch', 'Branch')}:</strong> {branchSummary}
+            </span>
+            <span>
+              <strong>CODEOWNERS:</strong> {hasCodeownersFile ? codeownersPath || 'CODEOWNERS' : tt('not found', 'nicht gefunden')}
+            </span>
+            {!isDemoMode ? (
+              <span>
+                <strong>{tt('Incoming', 'Eingehend')}:</strong>{' '}
+                {incomingDelta
+                  ? incomingDelta.remoteRef
+                    ? `${incomingDelta.incomingCommitCount} ${tt('commit(s)', 'Commit(s)')}, ${incomingDelta.incomingFiles.length} ${tt('file(s)', 'Datei(en)')}`
+                    : tt('no tracking branch', 'kein Tracking-Branch')
+                  : tt('not checked', 'nicht geprüft')}
+              </span>
+            ) : (
+              <span>
+                <strong>{tt('Incoming', 'Eingehend')}:</strong> {tt('not available in demo mode', 'im Demo-Modus nicht verfügbar')}
+              </span>
+            )}
+            {!isDemoMode ? (
+              <span className={conflictFiles.length > 0 ? 'status-conflicts' : ''}>
+                <strong>{tt('Conflicts', 'Konflikte')}:</strong> {conflictFiles.length}
+              </span>
+            ) : null}
+          </section>
+        ) : null}
+
+        {windowMode === 'settings' ? (
+          <section className="settings-section">
+            <div className="settings-grid">
+              <div className="setting-row">
+                <span className="setting-label">{tt('Language', 'Sprache')}</span>
+                <div className="toggle-group">
+                  <button className={locale === 'de' ? 'toggle-active' : ''} onClick={() => setLocale('de')} disabled={busy}>
+                    DE
+                  </button>
+                  <button className={locale === 'en' ? 'toggle-active' : ''} onClick={() => setLocale('en')} disabled={busy}>
+                    EN
+                  </button>
+                </div>
+              </div>
+
+              <div className="setting-row">
+                <span className="setting-label">{tt('Theme', 'Darstellung')}</span>
+                <div className="toggle-group">
+                  <button className={themeMode === 'light' ? 'toggle-active' : ''} onClick={() => setThemeMode('light')} disabled={busy}>
+                    {tt('Light', 'Hell')}
+                  </button>
+                  <button className={themeMode === 'dark' ? 'toggle-active' : ''} onClick={() => setThemeMode('dark')} disabled={busy}>
+                    {tt('Dark', 'Dunkel')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="setting-row">
+                <span className="setting-label">{tt('Remote', 'Remote')}</span>
+                <input
+                  value={remoteInput}
+                  onChange={(event) => setRemoteInput(event.target.value)}
+                  placeholder={tt('remote', 'remote')}
+                  disabled={busy || isDemoMode}
+                />
+              </div>
+
+              <div className="setting-row">
+                <span className="setting-label">{tt('Default Branch', 'Standard-Branch')}</span>
+                <input
+                  value={branchInput}
+                  onChange={(event) => setBranchInput(event.target.value)}
+                  placeholder={tt('branch (optional)', 'Branch (optional)')}
+                  disabled={busy || isDemoMode}
+                />
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {windowMode === 'workflows' ? (
+          <section className="control-card">
+            <div className="control-tabs">
+              {!isDemoMode ? (
+                <button className={controlTab === 'sync' ? 'active-tab' : ''} onClick={() => setControlTab('sync')} disabled={busy}>
+                  {tt('Sync', 'Sync')}
+                </button>
+              ) : null}
+              {!isDemoMode ? (
+                <button className={controlTab === 'branch' ? 'active-tab' : ''} onClick={() => setControlTab('branch')} disabled={busy}>
+                  {tt('Branch', 'Branch')}
+                </button>
+              ) : null}
+              {!isDemoMode ? (
+                <button className={controlTab === 'changes' ? 'active-tab' : ''} onClick={() => setControlTab('changes')} disabled={busy}>
+                  {tt('Changes', 'Änderungen')}
+                </button>
+              ) : null}
+              {!isDemoMode ? (
+                <button className={controlTab === 'commit' ? 'active-tab' : ''} onClick={() => setControlTab('commit')} disabled={busy}>
+                  {tt('Commit', 'Commit')}
+                </button>
+              ) : null}
+              {!isDemoMode ? (
+                <button className={controlTab === 'release' ? 'active-tab' : ''} onClick={() => setControlTab('release')} disabled={busy}>
+                  {tt('Release', 'Release')}
+                </button>
+              ) : null}
+              <button className={controlTab === 'search' ? 'active-tab' : ''} onClick={() => setControlTab('search')} disabled={busy}>
+                {tt('Search', 'Suche')}
+              </button>
+            </div>
+
+            {!isDemoMode && controlTab === 'sync' ? (
+              <div className="sync-controls">
+                <button onClick={fetchRemote} disabled={busy || !isRepoOpen}>
+                  {tt('Fetch', 'Fetch')}
+                </button>
+                <button onClick={pullRemote} disabled={busy || !isRepoOpen}>
+                  {tt('Pull (rebase)', 'Pull (Rebase)')}
+                </button>
+                <button onClick={pushRemote} disabled={busy || !isRepoOpen}>
+                  {tt('Push', 'Push')}
+                </button>
+                <button onClick={() => refreshIncomingDelta(true)} disabled={busy || !isRepoOpen}>
+                  {tt('Incoming Delta', 'Eingehende Deltas')}
+                </button>
+              </div>
+            ) : null}
+
+            {!isDemoMode && controlTab === 'branch' ? (
+              <div className="branch-controls">
+                <input
+                  value={newBranchName}
+                  onChange={(event) => setNewBranchName(event.target.value)}
+                  placeholder={tt('new branch name', 'neuer Branch-Name')}
+                />
+                <input
+                  value={newBranchFromRef}
+                  onChange={(event) => setNewBranchFromRef(event.target.value)}
+                  placeholder={tt('from ref (default HEAD)', 'von Ref (Standard HEAD)')}
+                />
+                <button onClick={createAndCheckoutBranch} disabled={busy || !isRepoOpen}>
+                  {tt('Create + Checkout', 'Erstellen + Checkout')}
+                </button>
+                <button onClick={checkoutBranchNow} disabled={busy || !isRepoOpen}>
+                  {tt('Checkout Branch', 'Branch auschecken')}
+                </button>
+                <button onClick={setUpstreamNow} disabled={busy || !isRepoOpen}>
+                  {tt('Set Upstream', 'Upstream setzen')}
+                </button>
+              </div>
+            ) : null}
+
+            {!isDemoMode && controlTab === 'changes' ? (
+              <div className="workflow-panel">
+                <div className="file-actions">
+                  <button onClick={stageSelected} disabled={busy || !selectedChangedPath}>
+                    {tt('Stage Selected', 'Auswahl stagen')}
+                  </button>
+                  <button onClick={unstageSelected} disabled={busy || !selectedChangedPath}>
+                    {tt('Unstage Selected', 'Auswahl unstage')}
+                  </button>
+                  <button onClick={stageAll} disabled={busy || changedFiles.length === 0}>
+                    {tt('Stage All', 'Alle stagen')}
+                  </button>
+                  <button onClick={unstageAll} disabled={busy || changedFiles.length === 0}>
+                    {tt('Unstage All', 'Alle unstage')}
+                  </button>
+                </div>
+
+                {changedFiles.length === 0 ? (
+                  <p className="muted">{tt('No changed files in workflow queue.', 'Keine geänderten Dateien in der Workflow-Warteschlange.')}</p>
+                ) : (
+                  <ul className="workflow-file-list">
+                    {changedFiles.map((file) => {
+                      const hint = codeownerHintsByPath[normalizePath(file.path)];
+                      const hasOwners = Boolean(hint && hint.owners.length > 0);
+
+                      return (
+                        <li key={`${file.path}-${file.indexStatus}-${file.workTreeStatus}-workflow`}>
+                          <button
+                            className={`${selectedChangedPath === file.path ? 'selected' : ''} ${isConflictEntry(file) ? 'selected-conflict' : ''}`.trim()}
+                            onClick={() => showDiff(file.path)}
+                          >
+                            <span className="status-pill">{statusLabel(file)}</span>
+                            <span className="path">{file.path}</span>
+                            {isConflictEntry(file) ? <span className="conflict-pill">{tt('CONFLICT', 'KONFLIKT')}</span> : null}
+                            {hasOwners ? (
+                              <span
+                                className="owner-pill"
+                                title={hint?.matchedPattern ? `CODEOWNERS pattern: ${hint.matchedPattern}` : 'CODEOWNERS'}
+                              >
+                                {hint?.owners.join(', ')}
+                              </span>
+                            ) : hasCodeownersFile ? (
+                              <span className="owner-pill owner-pill-none">{tt('unowned', 'ohne Owner')}</span>
+                            ) : null}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            ) : null}
+
+            {!isDemoMode && controlTab === 'commit' ? (
+              <div className="workflow-panel">
+                <div className="incoming-box">
+                  <strong>{tt('Remote Delta', 'Remote-Delta')}</strong>
+                  {incomingDelta ? (
+                    incomingDelta.remoteRef ? (
+                      <>
+                        <p>
+                          {tt('Source', 'Quelle')}: {incomingDelta.remoteRef} | {tt('commits', 'Commits')}: {incomingDelta.incomingCommitCount} |{' '}
+                          {tt('files', 'Dateien')}: {incomingDelta.incomingFiles.length}
+                        </p>
+                        <p className={incomingDelta.conflictCandidates.length > 0 ? 'incoming-warning' : ''}>
+                          {tt('Conflict candidates', 'Konfliktkandidaten')}:{' '}
+                          {incomingDelta.conflictCandidates.length > 0 ? incomingDelta.conflictCandidates.join(', ') : tt('none', 'keine')}
+                        </p>
+                      </>
+                    ) : (
+                      <p>{tt('No tracking branch configured.', 'Kein Tracking-Branch konfiguriert.')}</p>
+                    )
+                  ) : (
+                    <p>
+                      {tt(
+                        'Run fetch or Incoming Delta to inspect remote changes.',
+                        'Führe Fetch oder Eingehende Deltas aus, um Remote-Änderungen zu sehen.'
+                      )}
+                    </p>
+                  )}
+                </div>
+
+                <div className="commit-box">
+                  <h3>{tt('Create Commit', 'Commit erstellen')}</h3>
+                  <input
+                    ref={commitInputRef}
+                    value={commitMessage}
+                    onChange={(event) => setCommitMessage(event.target.value)}
+                    placeholder={tt('Commit message', 'Commit-Nachricht')}
+                  />
+                  <button className="primary" onClick={commitChanges} disabled={busy || !isRepoOpen}>
+                    {tt('Commit', 'Commit')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {!isDemoMode && controlTab === 'release' ? (
+              <div className="workflow-panel">
+                <div className="release-box">
+                  <h3>{tt('Release Gate', 'Release-Gate')}</h3>
+                  <input
+                    value={releaseId}
+                    onChange={(event) => setReleaseId(event.target.value)}
+                    placeholder={tt('release tag (e.g. release/v0.1.0)', 'Release-Tag (z. B. release/v0.1.0)')}
+                  />
+                  <input
+                    value={releaseTargetRef}
+                    onChange={(event) => setReleaseTargetRef(event.target.value)}
+                    placeholder={tt('target ref (default HEAD)', 'Ziel-Ref (Standard HEAD)')}
+                  />
+                  <select value={releaseScopeType} onChange={(event) => setReleaseScopeType(event.target.value as ReleaseScopeType)}>
+                    <option value="active">{tt('Scope: active markdown file', 'Scope: aktive Markdown-Datei')}</option>
+                    <option value="all">{tt('Scope: all markdown files', 'Scope: alle Markdown-Dateien')}</option>
+                  </select>
+
+                  <label className="checkbox-line">
+                    <input type="checkbox" checked={pushReleaseTag} onChange={(event) => setPushReleaseTag(event.target.checked)} />
+                    {tt('Push tag to remote after release', 'Tag nach Release zum Remote pushen')}
+                  </label>
+
+                  <div className="reply-actions">
+                    <button onClick={checkReleaseGate} disabled={busy || !isRepoOpen}>
+                      {tt('Check Gate', 'Gate prüfen')}
+                    </button>
+                    <button className="primary" onClick={releaseVersionNow} disabled={busy || !isRepoOpen}>
+                      {tt('Release Version', 'Version freigeben')}
+                    </button>
+                  </div>
+
+                  {releaseGate ? (
+                    <div className="release-state">
+                      <p>
+                        {tt('Releasable', 'Freigabefähig')}: {releaseGate.releasable ? tt('yes', 'ja') : tt('no', 'nein')}
+                      </p>
+                      <p>{tt('Open comments', 'Offene Kommentare')}: {releaseGate.openComments}</p>
+                      <p>
+                        {tt('Blocking IDs', 'Blockierende IDs')}:{' '}
+                        {releaseGate.blockingCommentIds.length > 0 ? releaseGate.blockingCommentIds.join(', ') : tt('none', 'keine')}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {controlTab === 'search' ? (
+              <div className="search-panel">
+                <div className="search-row">
+                  <input
+                    ref={searchInputRef}
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        void searchRepository();
+                      }
+                    }}
+                    placeholder={tt('Search markdown content...', 'Markdown-Inhalte durchsuchen...')}
+                    disabled={busy || !isRepoOpen}
+                  />
+                  <button className="primary" onClick={searchRepository} disabled={busy || !isRepoOpen}>
+                    {tt('Search', 'Suche')}
+                  </button>
+                </div>
+                {searchResult ? (
+                  <div className="search-results">
+                    <p>
+                      {tt('Results for', 'Ergebnisse für')} <strong>{searchResult.query}</strong>: {searchResult.totalMatches}
+                      {searchResult.truncated ? tt(' (truncated)', ' (gekürzt)') : ''}
+                    </p>
+                    <ul>
+                      {searchResult.items.map((item, index) => (
+                        <li key={`${item.path}:${item.line}:${index}`}>
+                          <button
+                            onClick={() => {
+                              void loadMarkdownFile(item.path);
+                            }}
+                            disabled={busy}
+                          >
+                            <span className="search-hit-path">
+                              {item.path}:{item.line}
+                            </span>
+                            <span className="search-hit-excerpt">{item.excerpt || tt('(empty line)', '(leere Zeile)')}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+      </section>
+    );
+  }
+
   if (showOnboarding) {
     return (
       <div className="app-shell onboarding-shell">
@@ -1758,298 +2410,184 @@ export default function App(): JSX.Element {
     );
   }
 
+  if (!isMainWindow) {
+    return (
+      <div className="app-shell workspace-shell utility-window-shell">
+        <header className="header toolbar-strip workspace-header utility-header">
+          <div className="header-leading">
+            <div className="title-stack">
+              <h1>{windowTitle}</h1>
+              <p className="header-subtitle">myMarkDown</p>
+            </div>
+          </div>
+          <div className="header-tools">
+            <p className={`mode-pill ${isDemoMode ? 'demo-mode' : ''}`}>{isDemoMode ? tt('Demo', 'Demo') : tt('Git', 'Git')}</p>
+            <div className="quick-actions" role="toolbar" aria-label={tt('Quick actions', 'Schnellaktionen')}>
+              <button className="icon-button" onClick={pickRepositoryAndOpen} disabled={busy} title={tt('Open repository', 'Repository öffnen')}>
+                <QuickIcon kind="repo" />
+              </button>
+              <button
+                className="icon-button"
+                onClick={saveActiveFile}
+                disabled={busy || !activeMarkdownPath}
+                title={tt('Save file', 'Datei speichern')}
+              >
+                <QuickIcon kind="save" />
+              </button>
+              {utilityWindowMode === 'settings' ? (
+                <button
+                  className="icon-button"
+                  onClick={() => {
+                    void openWorkflowWindow(controlTab, true);
+                  }}
+                  disabled={busy || isDemoMode}
+                  title={tt('Open workflow center', 'Workflow-Center öffnen')}
+                >
+                  <QuickIcon kind="workflow" />
+                </button>
+              ) : (
+                <button
+                  className="icon-button"
+                  onClick={() => {
+                    void openSettingsWindow(true);
+                  }}
+                  disabled={busy}
+                  title={tt('Open settings', 'Einstellungen öffnen')}
+                >
+                  <QuickIcon kind="settings" />
+                </button>
+              )}
+              {!isDemoMode ? (
+                <button
+                  className="icon-button"
+                  onClick={() => {
+                    void refreshStatus(true);
+                    void refreshIncomingDelta(false);
+                  }}
+                  disabled={busy || !isRepoOpen}
+                  title={tt('Refresh status and sync info', 'Status und Sync-Info aktualisieren')}
+                >
+                  <QuickIcon kind="sync" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </header>
+
+        <main className="utility-main">{renderUtilityWorkspace(utilityWindowMode)}</main>
+        <section className={`notice inline-notice ${notice.kind}`}>{notice.text}</section>
+      </div>
+    );
+  }
+
   return (
-    <div className="app-shell">
-      <header className="header toolbar-strip">
-        <div className="title-stack">
-          <h1>{windowTitle}</h1>
-          <p className="header-subtitle">myMarkDown</p>
+    <div className="app-shell workspace-shell">
+      <header className="header toolbar-strip workspace-header">
+        <div className="header-leading">
+          <div className="title-stack">
+            <h1>{windowTitle}</h1>
+            <p className="header-subtitle">myMarkDown</p>
+          </div>
         </div>
         <div className="header-tools">
-          {zenMode ? (
-            <p className="mode-pill">{tt('Zen Mode', 'Zen-Modus')}</p>
-          ) : (
-            <>
-              <p className={`mode-pill ${isDemoMode ? 'demo-mode' : ''}`}>
-                {isDemoMode ? tt('Mode: Demo', 'Modus: Demo') : tt('Mode: Git', 'Modus: Git')}
-              </p>
-              <p>
-                {tt('Git identity', 'Git-Identität')}: {gitIdentity}
-              </p>
-            </>
-          )}
-          <div className="toggle-group">
-            <button className={zenMode ? 'toggle-active' : ''} onClick={() => setZenMode((value) => !value)}>
-              {tt('Zen', 'Zen')}
+          <p className={`mode-pill ${isDemoMode ? 'demo-mode' : ''}`}>
+            {isDemoMode ? tt('Demo', 'Demo') : tt('Git', 'Git')}
+          </p>
+          <div className="quick-actions" role="toolbar" aria-label={tt('Quick actions', 'Schnellaktionen')}>
+            <button
+              className="icon-button"
+              onClick={pickRepositoryAndOpen}
+              disabled={busy}
+              title={tt('Open repository', 'Repository öffnen')}
+              aria-label={tt('Open repository', 'Repository öffnen')}
+            >
+              <QuickIcon kind="repo" />
+            </button>
+            <button
+              className="icon-button"
+              onClick={saveActiveFile}
+              disabled={busy || !activeMarkdownPath}
+              title={tt('Save file', 'Datei speichern')}
+              aria-label={tt('Save file', 'Datei speichern')}
+            >
+              <QuickIcon kind="save" />
+            </button>
+            <button
+              className="icon-button"
+              onClick={() => {
+                void openWorkflowWindow('search');
+              }}
+              disabled={busy || !isRepoOpen}
+              title={tt('Search', 'Suche')}
+              aria-label={tt('Search', 'Suche')}
+            >
+              <QuickIcon kind="search" />
+            </button>
+            <button
+              className="icon-button"
+              onClick={() => {
+                const nextTab = controlTab === 'search' ? 'changes' : controlTab;
+                void openWorkflowWindow(nextTab);
+              }}
+              disabled={busy || isDemoMode}
+              title={tt('Open workflow center', 'Workflow-Center öffnen')}
+              aria-label={tt('Open workflow center', 'Workflow-Center öffnen')}
+            >
+              <QuickIcon kind="workflow" />
+            </button>
+            {!isDemoMode ? (
+              <button
+                className="icon-button"
+                onClick={() => {
+                  void refreshStatus(true);
+                  void refreshIncomingDelta(false);
+                }}
+                disabled={busy || !isRepoOpen}
+                title={tt('Refresh status and sync info', 'Status und Sync-Info aktualisieren')}
+                aria-label={tt('Refresh status and sync info', 'Status und Sync-Info aktualisieren')}
+              >
+                <QuickIcon kind="sync" />
+              </button>
+            ) : null}
+            <button
+              className={`icon-button ${showLeftSidebar ? 'icon-button-active' : ''}`}
+              onClick={() => setShowLeftSidebar((value) => !value)}
+              title={tt('Toggle left sidebar', 'Linke Sidebar umschalten')}
+              aria-label={tt('Toggle left sidebar', 'Linke Sidebar umschalten')}
+            >
+              <QuickIcon kind="left" />
+            </button>
+            <button
+              className={`icon-button ${showRightSidebar ? 'icon-button-active' : ''}`}
+              onClick={() => setShowRightSidebar((value) => !value)}
+              title={tt('Toggle right sidebar', 'Rechte Sidebar umschalten')}
+              aria-label={tt('Toggle right sidebar', 'Rechte Sidebar umschalten')}
+            >
+              <QuickIcon kind="right" />
+            </button>
+            <button
+              className={`icon-button ${zenMode ? 'icon-button-active' : ''}`}
+              onClick={() => setZenMode((value) => !value)}
+              title={tt('Toggle zen mode', 'Zen-Modus umschalten')}
+              aria-label={tt('Toggle zen mode', 'Zen-Modus umschalten')}
+            >
+              <QuickIcon kind="zen" />
             </button>
             {!zenMode ? (
-              <>
-                <button
-                  className={showAdvancedPanels ? 'toggle-active' : ''}
-                  onClick={() => setShowAdvancedPanels((value) => !value)}
-                >
-                  {tt('Advanced', 'Erweitert')}
-                </button>
-                <button
-                  className={showLeftSidebar ? 'toggle-active' : ''}
-                  onClick={() => setShowLeftSidebar((value) => !value)}
-                >
-                  {tt('Left Nav', 'Links Nav')}
-                </button>
-                <button
-                  className={showRightSidebar ? 'toggle-active' : ''}
-                  onClick={() => setShowRightSidebar((value) => !value)}
-                >
-                  {tt('Right Sidebar', 'Rechte Sidebar')}
-                </button>
-              </>
+              <button
+                className="icon-button"
+                onClick={() => {
+                  void openSettingsWindow();
+                }}
+                title={tt('Open settings menu', 'Einstellungsmenü öffnen')}
+                aria-label={tt('Open settings menu', 'Einstellungsmenü öffnen')}
+              >
+                <QuickIcon kind="settings" />
+              </button>
             ) : null}
           </div>
         </div>
       </header>
-
-      {!zenMode ? (
-        <section className="repo-open toolbar-strip">
-          <input
-            ref={repoInputRef}
-            value={repoInput}
-            onChange={(event) => setRepoInput(event.target.value)}
-            placeholder={tt('/absolute/path/to/repository', '/absoluter/pfad/zum/repository')}
-          />
-          <button onClick={pickRepositoryAndOpen} disabled={busy}>
-            {tt('Browse', 'Durchsuchen')}
-          </button>
-          <button
-            className="primary"
-            onClick={() => {
-              void openRepository(undefined, {
-                showOpenSuccessNotice: true,
-                bootstrapIfEmpty: false,
-                persistConfig: true
-              });
-            }}
-            disabled={busy}
-          >
-            {tt('Open Repository', 'Repository öffnen')}
-          </button>
-          <button onClick={startDemoMode} disabled={busy}>
-            {tt('Demo Mode', 'Demo-Modus')}
-          </button>
-          <button onClick={() => refreshStatus(true)} disabled={busy || !isRepoOpen}>
-            {tt('Refresh Status', 'Status aktualisieren')}
-          </button>
-        </section>
-      ) : null}
-
-      {!zenMode ? <section className={`notice ${notice.kind}`}>{notice.text}</section> : null}
-
-      {!zenMode && showAdvancedPanels ? (
-        <>
-          <section className="status-bar toolbar-strip">
-            <span>
-              <strong>{tt('Branch', 'Branch')}:</strong> {branchSummary}
-            </span>
-            <span>
-              <strong>CODEOWNERS:</strong> {hasCodeownersFile ? codeownersPath || 'CODEOWNERS' : tt('not found', 'nicht gefunden')}
-            </span>
-            {!isDemoMode ? (
-              <span>
-                <strong>{tt('Incoming', 'Eingehend')}:</strong>{' '}
-                {incomingDelta
-                  ? incomingDelta.remoteRef
-                    ? `${incomingDelta.incomingCommitCount} ${tt('commit(s)', 'Commit(s)')}, ${incomingDelta.incomingFiles.length} ${tt('file(s)', 'Datei(en)')}`
-                    : tt('no tracking branch', 'kein Tracking-Branch')
-                  : tt('not checked', 'nicht geprüft')}
-              </span>
-            ) : (
-              <span>
-                <strong>{tt('Incoming', 'Eingehend')}:</strong> {tt('not available in demo mode', 'im Demo-Modus nicht verfügbar')}
-              </span>
-            )}
-            {!isDemoMode ? (
-              <span className={conflictFiles.length > 0 ? 'status-conflicts' : ''}>
-                <strong>{tt('Conflicts', 'Konflikte')}:</strong> {conflictFiles.length}
-              </span>
-            ) : null}
-          </section>
-
-          <section className="settings-section toolbar-strip">
-            <h2>{tt('Settings', 'Einstellungen')}</h2>
-            <div className="settings-grid">
-              <div className="setting-row">
-                <span className="setting-label">{tt('Language', 'Sprache')}</span>
-                <div className="toggle-group">
-                  <button className={locale === 'de' ? 'toggle-active' : ''} onClick={() => setLocale('de')} disabled={busy}>
-                    DE
-                  </button>
-                  <button className={locale === 'en' ? 'toggle-active' : ''} onClick={() => setLocale('en')} disabled={busy}>
-                    EN
-                  </button>
-                </div>
-              </div>
-
-              <div className="setting-row">
-                <span className="setting-label">{tt('Theme', 'Darstellung')}</span>
-                <div className="toggle-group">
-                  <button
-                    className={themeMode === 'light' ? 'toggle-active' : ''}
-                    onClick={() => setThemeMode('light')}
-                    disabled={busy}
-                  >
-                    {tt('Light', 'Hell')}
-                  </button>
-                  <button
-                    className={themeMode === 'dark' ? 'toggle-active' : ''}
-                    onClick={() => setThemeMode('dark')}
-                    disabled={busy}
-                  >
-                    {tt('Dark', 'Dunkel')}
-                  </button>
-                </div>
-              </div>
-
-              <div className="setting-row">
-                <span className="setting-label">{tt('Remote', 'Remote')}</span>
-                <input
-                  value={remoteInput}
-                  onChange={(event) => setRemoteInput(event.target.value)}
-                  placeholder={tt('remote', 'remote')}
-                  disabled={busy || isDemoMode}
-                />
-              </div>
-
-              <div className="setting-row">
-                <span className="setting-label">{tt('Default Branch', 'Standard-Branch')}</span>
-                <input
-                  value={branchInput}
-                  onChange={(event) => setBranchInput(event.target.value)}
-                  placeholder={tt('branch (optional)', 'Branch (optional)')}
-                  disabled={busy || isDemoMode}
-                />
-              </div>
-            </div>
-          </section>
-
-          <section className="control-card toolbar-strip">
-            <div className="control-tabs">
-              {!isDemoMode ? (
-                <button
-                  className={controlTab === 'sync' ? 'active-tab' : ''}
-                  onClick={() => setControlTab('sync')}
-                  disabled={busy}
-                >
-                  {tt('Sync', 'Sync')}
-                </button>
-              ) : null}
-              {!isDemoMode ? (
-                <button
-                  className={controlTab === 'branch' ? 'active-tab' : ''}
-                  onClick={() => setControlTab('branch')}
-                  disabled={busy}
-                >
-                  {tt('Branch', 'Branch')}
-                </button>
-              ) : null}
-              <button
-                className={controlTab === 'search' ? 'active-tab' : ''}
-                onClick={() => setControlTab('search')}
-                disabled={busy}
-              >
-                {tt('Search', 'Suche')}
-              </button>
-            </div>
-
-            {!isDemoMode && controlTab === 'sync' ? (
-              <div className="sync-controls">
-                <button onClick={fetchRemote} disabled={busy || !isRepoOpen}>
-                  {tt('Fetch', 'Fetch')}
-                </button>
-                <button onClick={pullRemote} disabled={busy || !isRepoOpen}>
-                  {tt('Pull (rebase)', 'Pull (Rebase)')}
-                </button>
-                <button onClick={pushRemote} disabled={busy || !isRepoOpen}>
-                  {tt('Push', 'Push')}
-                </button>
-                <button onClick={() => refreshIncomingDelta(true)} disabled={busy || !isRepoOpen}>
-                  {tt('Incoming Delta', 'Eingehende Deltas')}
-                </button>
-              </div>
-            ) : null}
-
-            {!isDemoMode && controlTab === 'branch' ? (
-              <div className="branch-controls">
-                <input
-                  value={newBranchName}
-                  onChange={(event) => setNewBranchName(event.target.value)}
-                  placeholder={tt('new branch name', 'neuer Branch-Name')}
-                />
-                <input
-                  value={newBranchFromRef}
-                  onChange={(event) => setNewBranchFromRef(event.target.value)}
-                  placeholder={tt('from ref (default HEAD)', 'von Ref (Standard HEAD)')}
-                />
-                <button onClick={createAndCheckoutBranch} disabled={busy || !isRepoOpen}>
-                  {tt('Create + Checkout', 'Erstellen + Checkout')}
-                </button>
-                <button onClick={checkoutBranchNow} disabled={busy || !isRepoOpen}>
-                  {tt('Checkout Branch', 'Branch auschecken')}
-                </button>
-                <button onClick={setUpstreamNow} disabled={busy || !isRepoOpen}>
-                  {tt('Set Upstream', 'Upstream setzen')}
-                </button>
-              </div>
-            ) : null}
-
-            {controlTab === 'search' ? (
-              <div className="search-panel">
-                <div className="search-row">
-                  <input
-                    ref={searchInputRef}
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        void searchRepository();
-                      }
-                    }}
-                    placeholder={tt('Search markdown content...', 'Markdown-Inhalte durchsuchen...')}
-                    disabled={busy || !isRepoOpen}
-                  />
-                  <button className="primary" onClick={searchRepository} disabled={busy || !isRepoOpen}>
-                    {tt('Search', 'Suche')}
-                  </button>
-                </div>
-                {searchResult ? (
-                  <div className="search-results">
-                    <p>
-                      {tt('Results for', 'Ergebnisse für')} <strong>{searchResult.query}</strong>:{' '}
-                      {searchResult.totalMatches}
-                      {searchResult.truncated ? tt(' (truncated)', ' (gekürzt)') : ''}
-                    </p>
-                    <ul>
-                      {searchResult.items.map((item, index) => (
-                        <li key={`${item.path}:${item.line}:${index}`}>
-                          <button
-                            onClick={() => {
-                              void loadMarkdownFile(item.path);
-                            }}
-                            disabled={busy}
-                          >
-                            <span className="search-hit-path">
-                              {item.path}:{item.line}
-                            </span>
-                            <span className="search-hit-excerpt">{item.excerpt || tt('(empty line)', '(leere Zeile)')}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </section>
-        </>
-      ) : null}
 
       <main
         className={[
@@ -2062,18 +2600,19 @@ export default function App(): JSX.Element {
           .join(' ')}
       >
         {visibleLeftSidebar ? (
-          <aside className="panel sidebar-panel files-panel">
+          <aside className="panel sidebar-panel files-panel left-sidebar">
             <div className="panel-header">
-              <h2>{tt('Navigation', 'Navigation')}</h2>
+              <p className="sidebar-caption">{tt('Navigator', 'Navigator')}</p>
+              <h2>{tt('Slides', 'Folien')}</h2>
             </div>
 
             <div className="nav-block">
-              <h3>{tt('Documents', 'Dokumente')}</h3>
+              <h3>{tt('Slide List', 'Folienliste')}</h3>
               <ul className="doc-list">
                 {markdownFiles.length === 0 ? (
                   <li className="muted">{tt('No markdown files', 'Keine Markdown-Dateien')}</li>
                 ) : (
-                  markdownFiles.map((file) => (
+                  markdownFiles.map((file, index) => (
                     <li key={file.path}>
                       <button
                         className={activeMarkdownPath === file.path ? 'selected' : ''}
@@ -2082,7 +2621,11 @@ export default function App(): JSX.Element {
                         }}
                         disabled={busy}
                       >
-                        <span className="path">{file.path}</span>
+                        <span className="slide-index">{index + 1}</span>
+                        <span className="slide-meta">
+                          <span className="slide-title">{fileNameFromPath(file.path)}</span>
+                          <span className="slide-path">{file.path}</span>
+                        </span>
                       </button>
                     </li>
                   ))
@@ -2090,113 +2633,30 @@ export default function App(): JSX.Element {
               </ul>
             </div>
 
-            {showAdvancedPanels && !isDemoMode ? (
-              <>
-                <div className="panel-header">
-                  <h3>{tt('Changed Files', 'Geänderte Dateien')}</h3>
-                  <div className="file-actions">
-                    <button onClick={stageSelected} disabled={busy || !selectedChangedPath}>
-                      {tt('Stage Selected', 'Auswahl stagen')}
-                    </button>
-                    <button onClick={unstageSelected} disabled={busy || !selectedChangedPath}>
-                      {tt('Unstage Selected', 'Auswahl unstage')}
-                    </button>
-                    <button onClick={stageAll} disabled={busy || changedFiles.length === 0}>
-                      {tt('Stage All', 'Alle stagen')}
-                    </button>
-                    <button onClick={unstageAll} disabled={busy || changedFiles.length === 0}>
-                      {tt('Unstage All', 'Alle unstage')}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="incoming-box">
-                  <strong>{tt('Remote Delta', 'Remote-Delta')}</strong>
-                  {incomingDelta ? (
-                    incomingDelta.remoteRef ? (
-                      <>
-                        <p>
-                          {tt('Source', 'Quelle')}: {incomingDelta.remoteRef} | {tt('commits', 'Commits')}:{' '}
-                          {incomingDelta.incomingCommitCount} | {tt('files', 'Dateien')}:{' '}
-                          {incomingDelta.incomingFiles.length}
-                        </p>
-                        <p className={incomingDelta.conflictCandidates.length > 0 ? 'incoming-warning' : ''}>
-                          {tt('Conflict candidates', 'Konfliktkandidaten')}:{' '}
-                          {incomingDelta.conflictCandidates.length > 0
-                            ? incomingDelta.conflictCandidates.join(', ')
-                            : tt('none', 'keine')}
-                        </p>
-                      </>
-                    ) : (
-                      <p>{tt('No tracking branch configured.', 'Kein Tracking-Branch konfiguriert.')}</p>
-                    )
-                  ) : (
-                    <p>
-                      {tt(
-                        'Run fetch or Incoming Delta to inspect remote changes.',
-                        'Führe Fetch oder Eingehende Deltas aus, um Remote-Änderungen zu sehen.'
-                      )}
-                    </p>
-                  )}
-                </div>
-
-                {changedFiles.length === 0 ? (
-                  <p className="muted">{tt('No changes.', 'Keine Änderungen.')}</p>
-                ) : (
-                  <ul>
-                    {changedFiles.map((file) => {
-                      const hint = codeownerHintsByPath[normalizePath(file.path)];
-                      const hasOwners = Boolean(hint && hint.owners.length > 0);
-
-                      return (
-                        <li key={`${file.path}-${file.indexStatus}-${file.workTreeStatus}`}>
-                          <button
-                            className={`${selectedChangedPath === file.path ? 'selected' : ''} ${
-                              isConflictEntry(file) ? 'selected-conflict' : ''
-                            }`.trim()}
-                            onClick={() => showDiff(file.path)}
-                          >
-                            <span className="status-pill">{statusLabel(file)}</span>
-                            <span className="path">{file.path}</span>
-                            {isConflictEntry(file) ? <span className="conflict-pill">{tt('CONFLICT', 'KONFLIKT')}</span> : null}
-                            {hasOwners ? (
-                              <span
-                                className="owner-pill"
-                                title={hint?.matchedPattern ? `CODEOWNERS pattern: ${hint.matchedPattern}` : 'CODEOWNERS'}
-                              >
-                                {hint?.owners.join(', ')}
-                              </span>
-                            ) : hasCodeownersFile ? (
-                              <span className="owner-pill owner-pill-none">{tt('unowned', 'ohne Owner')}</span>
-                            ) : null}
-                            {file.originalPath ? <span className="rename">(from {file.originalPath})</span> : null}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-
-                <div className="commit-box">
-                  <h3>{tt('Create Commit', 'Commit erstellen')}</h3>
-                  <input
-                    ref={commitInputRef}
-                    value={commitMessage}
-                    onChange={(event) => setCommitMessage(event.target.value)}
-                    placeholder={tt('Commit message', 'Commit-Nachricht')}
-                  />
-                  <button className="primary" onClick={commitChanges} disabled={busy || !isRepoOpen}>
-                    {tt('Commit', 'Commit')}
-                  </button>
-                </div>
-              </>
+            {!isDemoMode ? (
+              <div className="nav-block workflow-shortcut">
+                <h3>{tt('Workflows', 'Workflows')}</h3>
+                <p className="muted">
+                  {tt('Changed files', 'Geänderte Dateien')}: {changedFiles.length} | {tt('Conflicts', 'Konflikte')}: {conflictFiles.length}
+                </p>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    const targetTab: ControlTab = changedFiles.length > 0 ? 'changes' : 'commit';
+                    void openWorkflowWindow(targetTab);
+                  }}
+                  disabled={busy}
+                >
+                  {tt('Open Workflow Actions', 'Workflow-Aktionen öffnen')}
+                </button>
+              </div>
             ) : null}
           </aside>
         ) : null}
 
-        <section className="panel editor-panel">
-          <div className="panel-header">
-            <h2>{tt('Markdown Editor', 'Markdown-Editor')}</h2>
+        <section className="panel editor-panel stage-panel">
+          <div className="panel-header stage-header">
+            <h2>{tt('Canvas', 'Canvas')}</h2>
             <div className="editor-toolbar">
               <select
                 value={activeMarkdownPath}
@@ -2248,7 +2708,36 @@ export default function App(): JSX.Element {
             </div>
           ) : null}
 
-          <div ref={editorMountRef} className="editor-mount" />
+          <div className="editor-stage">
+            <div className="editor-stage-grid" />
+            <div className="slide-frame">
+              <div ref={editorMountRef} className="editor-mount" />
+              {!activeMarkdownPath ? (
+                <div className="editor-empty-state">
+                  <h3>{tt('No document loaded', 'Kein Dokument geladen')}</h3>
+                  <p>
+                    {tt(
+                      'Open a repository and select a markdown file to start editing.',
+                      'Öffne ein Repository und wähle eine Markdown-Datei, um zu starten.'
+                    )}
+                  </p>
+                  <div className="reply-actions">
+                    <button onClick={pickRepositoryAndOpen} disabled={busy}>
+                      {tt('Open Repository', 'Repository öffnen')}
+                    </button>
+                    <button onClick={startDemoMode} disabled={busy}>
+                      {tt('Start Demo Mode', 'Demo-Modus starten')}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div className="stage-footer">
+            <span>{activeMarkdownPath ? fileNameFromPath(activeMarkdownPath) : tt('No slide selected', 'Keine Folie ausgewählt')}</span>
+            <span>16:9</span>
+            <span>{editorMode === 'wysiwyg' ? 'WYSIWYG' : tt('Code View', 'Code-Ansicht')}</span>
+          </div>
 
           {showAdvancedPanels && !zenMode ? (
             <div className="diff-preview">
@@ -2277,7 +2766,10 @@ export default function App(): JSX.Element {
         </section>
 
         {visibleRightSidebar ? (
-          <aside className="panel sidebar-panel comments-panel">
+          <aside className="panel sidebar-panel comments-panel right-sidebar">
+            <div className="panel-header">
+              <p className="sidebar-caption">{tt('Inspector', 'Inspektor')}</p>
+            </div>
             <div className="panel-header sidebar-tabs">
               <button
                 className={rightSidebarTab === 'comments' ? 'active-tab' : ''}
@@ -2365,59 +2857,6 @@ export default function App(): JSX.Element {
                   </div>
                 </div>
 
-                <div className="release-box">
-                  <h3>{tt('Release Gate', 'Release-Gate')}</h3>
-                  <input
-                    value={releaseId}
-                    onChange={(event) => setReleaseId(event.target.value)}
-                    placeholder={tt('release tag (e.g. release/v0.1.0)', 'Release-Tag (z. B. release/v0.1.0)')}
-                  />
-                  <input
-                    value={releaseTargetRef}
-                    onChange={(event) => setReleaseTargetRef(event.target.value)}
-                    placeholder={tt('target ref (default HEAD)', 'Ziel-Ref (Standard HEAD)')}
-                  />
-                  <select
-                    value={releaseScopeType}
-                    onChange={(event) => setReleaseScopeType(event.target.value as ReleaseScopeType)}
-                  >
-                    <option value="active">{tt('Scope: active markdown file', 'Scope: aktive Markdown-Datei')}</option>
-                    <option value="all">{tt('Scope: all markdown files', 'Scope: alle Markdown-Dateien')}</option>
-                  </select>
-
-                  <label className="checkbox-line">
-                    <input
-                      type="checkbox"
-                      checked={pushReleaseTag}
-                      onChange={(event) => setPushReleaseTag(event.target.checked)}
-                    />
-                    {tt('Push tag to remote after release', 'Tag nach Release zum Remote pushen')}
-                  </label>
-
-                  <div className="reply-actions">
-                    <button onClick={checkReleaseGate} disabled={busy || !isRepoOpen}>
-                      {tt('Check Gate', 'Gate prüfen')}
-                    </button>
-                    <button className="primary" onClick={releaseVersionNow} disabled={busy || !isRepoOpen}>
-                      {tt('Release Version', 'Version freigeben')}
-                    </button>
-                  </div>
-
-                  {releaseGate ? (
-                    <div className="release-state">
-                      <p>
-                        {tt('Releasable', 'Freigabefähig')}: {releaseGate.releasable ? tt('yes', 'ja') : tt('no', 'nein')}
-                      </p>
-                      <p>{tt('Open comments', 'Offene Kommentare')}: {releaseGate.openComments}</p>
-                      <p>
-                        {tt('Blocking IDs', 'Blockierende IDs')}:{' '}
-                        {releaseGate.blockingCommentIds.length > 0
-                          ? releaseGate.blockingCommentIds.join(', ')
-                          : tt('none', 'keine')}
-                      </p>
-                    </div>
-                  ) : null}
-                </div>
               </>
             ) : null}
 
@@ -2479,6 +2918,8 @@ export default function App(): JSX.Element {
           </aside>
         ) : null}
       </main>
+
+      {!zenMode ? <section className={`notice inline-notice ${notice.kind}`}>{notice.text}</section> : null}
     </div>
   );
 }

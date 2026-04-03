@@ -78,9 +78,91 @@ import type {
 
 const isMac = process.platform === 'darwin';
 let mainWindow: BrowserWindow | null = null;
+let settingsWindow: BrowserWindow | null = null;
+let workflowsWindow: BrowserWindow | null = null;
+type UtilityWindowKind = 'settings' | 'workflows';
 
 function emitMenuAction(action: AppMenuAction): void {
-  mainWindow?.webContents.send('app:menuAction', action);
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  const targetWindow = focusedWindow && !focusedWindow.isDestroyed() ? focusedWindow : mainWindow;
+  targetWindow?.webContents.send('app:menuAction', action);
+}
+
+function closeWindow(win: BrowserWindow | null): void {
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  win.close();
+}
+
+function loadRendererWindow(win: BrowserWindow, windowKind: UtilityWindowKind | null): void {
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devServerUrl) {
+    const targetUrl = new URL(devServerUrl);
+    if (windowKind) {
+      targetUrl.searchParams.set('window', windowKind);
+      targetUrl.hash = `window=${windowKind}`;
+    }
+
+    win.loadURL(targetUrl.toString()).catch((error) => {
+      console.error('Failed to load renderer URL', error);
+    });
+    return;
+  }
+
+  const rendererIndexPath = path.join(__dirname, '../renderer/index.html');
+  const loadOptions = windowKind ? { query: { window: windowKind }, hash: `window=${windowKind}` } : undefined;
+  win.loadFile(rendererIndexPath, loadOptions).catch((error) => {
+    console.error('Failed to load renderer index.html', error);
+  });
+}
+
+function createUtilityWindow(windowKind: UtilityWindowKind): BrowserWindow {
+  const existingWindow = windowKind === 'settings' ? settingsWindow : workflowsWindow;
+  if (existingWindow && !existingWindow.isDestroyed()) {
+    existingWindow.focus();
+    return existingWindow;
+  }
+
+  const win = new BrowserWindow({
+    width: 1040,
+    height: 780,
+    minWidth: 860,
+    minHeight: 620,
+    title: windowKind === 'settings' ? 'myMarkDown Settings' : 'myMarkDown Workflows',
+    parent: mainWindow ?? undefined,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  if (windowKind === 'settings') {
+    settingsWindow = win;
+  } else {
+    workflowsWindow = win;
+  }
+
+  win.once('ready-to-show', () => {
+    win.show();
+  });
+
+  win.on('closed', () => {
+    if (windowKind === 'settings' && settingsWindow === win) {
+      settingsWindow = null;
+      return;
+    }
+
+    if (windowKind === 'workflows' && workflowsWindow === win) {
+      workflowsWindow = null;
+    }
+  });
+
+  loadRendererWindow(win, windowKind);
+  return win;
 }
 
 function configureApplicationMenu(): void {
@@ -162,6 +244,21 @@ function configureApplicationMenu(): void {
       { role: 'toggleDevTools' },
       { type: 'separator' },
       {
+        label: 'Open Settings Window',
+        accelerator: 'CmdOrCtrl+,',
+        click: () => {
+          createUtilityWindow('settings');
+        }
+      },
+      {
+        label: 'Open Workflow Window',
+        accelerator: 'Shift+CmdOrCtrl+W',
+        click: () => {
+          createUtilityWindow('workflows');
+        }
+      },
+      { type: 'separator' },
+      {
         label: 'Toggle Zen Mode',
         accelerator: 'Alt+CmdOrCtrl+Z',
         click: () => emitMenuAction('toggle-zen-mode')
@@ -199,8 +296,9 @@ async function pickRepositoryDirectory(): Promise<string | null> {
     title: 'Open Git Repository',
     properties: ['openDirectory']
   };
-  const result = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, dialogOptions)
+  const ownerWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
+  const result = ownerWindow
+    ? await dialog.showOpenDialog(ownerWindow, dialogOptions)
     : await dialog.showOpenDialog(dialogOptions);
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -337,6 +435,20 @@ function registerIpcHandlers(): void {
     })
   );
 
+  ipcMain.handle('app:openSettingsWindow', async (): Promise<AppResult<boolean>> =>
+    runQuery(async () => {
+      createUtilityWindow('settings');
+      return true;
+    })
+  );
+
+  ipcMain.handle('app:openWorkflowWindow', async (): Promise<AppResult<boolean>> =>
+    runQuery(async () => {
+      createUtilityWindow('workflows');
+      return true;
+    })
+  );
+
   ipcMain.handle('repo:listMarkdownFiles', async (): Promise<AppResult<MarkdownFileEntry[]>> =>
     runQuery(() => listMarkdownFiles())
   );
@@ -418,21 +530,17 @@ function createMainWindow(): void {
   win.on('closed', () => {
     if (mainWindow === win) {
       mainWindow = null;
+      closeWindow(settingsWindow);
+      closeWindow(workflowsWindow);
+      settingsWindow = null;
+      workflowsWindow = null;
     }
   });
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
-  if (devServerUrl) {
-    win.loadURL(devServerUrl).catch((error) => {
-      console.error('Failed to load dev server URL', error);
-    });
+  loadRendererWindow(win, null);
+  if (process.env.VITE_DEV_SERVER_URL) {
     win.webContents.openDevTools({ mode: 'detach' });
-    return;
   }
-
-  win.loadFile(path.join(__dirname, '../renderer/index.html')).catch((error) => {
-    console.error('Failed to load renderer index.html', error);
-  });
 }
 
 app.whenReady().then(() => {
