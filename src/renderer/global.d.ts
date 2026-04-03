@@ -2,6 +2,7 @@ import type {
   AppendCommentInput,
   AppResult,
   CloseCommentInput,
+  CodeOwnerHintsResult,
   CommentScope,
   CommentThread,
   CreateCommentInput,
@@ -10,6 +11,7 @@ import type {
   GitDiffTarget,
   GitRemoteTarget,
   GitStatusResult,
+  IncomingDeltaResult,
   MarkdownFileEntry,
   OpenCommentCountResult,
   OpenRepositoryResult,
@@ -27,6 +29,7 @@ declare global {
       getStatus(): Promise<AppResult<GitStatusResult>>;
       getDiff(target: GitDiffTarget): Promise<AppResult<string>>;
       getIdentity(): Promise<AppResult<GitIdentity>>;
+      getIncomingDelta(options: GitRemoteTarget): Promise<AppResult<IncomingDeltaResult>>;
       stage(paths: string[]): Promise<AppResult<null>>;
       unstage(paths: string[]): Promise<AppResult<null>>;
       commit(message: string): Promise<AppResult<null>>;
@@ -36,6 +39,7 @@ declare global {
       listMarkdownFiles(): Promise<AppResult<MarkdownFileEntry[]>>;
       readMarkdownFile(targetPath: string): Promise<AppResult<FileContentResult>>;
       writeMarkdownFile(input: SaveFileInput): Promise<AppResult<FileContentResult>>;
+      getCodeOwnerHints(paths: string[]): Promise<AppResult<CodeOwnerHintsResult>>;
       getComments(scope: CommentScope): Promise<AppResult<CommentThread[]>>;
       createComment(input: CreateCommentInput): Promise<AppResult<CommentThread>>;
       appendComment(input: AppendCommentInput): Promise<AppResult<CommentThread>>;

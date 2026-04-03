@@ -5,6 +5,7 @@ import {
   fetch,
   getDiff,
   getGitIdentity,
+  getIncomingDelta,
   getStatus,
   openRepository,
   pull,
@@ -13,6 +14,7 @@ import {
   unstage
 } from './gitAdapter';
 import { listMarkdownFiles, readMarkdownFile, writeMarkdownFile } from './repositoryFiles';
+import { getCodeOwnerHints } from './codeownersService';
 import {
   appendComment,
   closeComment,
@@ -30,12 +32,14 @@ import type {
   CloseCommentInput,
   CommentScope,
   CommentThread,
+  CodeOwnerHintsResult,
   CreateCommentInput,
   FileContentResult,
   GitIdentity,
   GitDiffTarget,
   GitRemoteTarget,
   GitStatusResult,
+  IncomingDeltaResult,
   MarkdownFileEntry,
   OpenCommentCountResult,
   OpenRepositoryResult,
@@ -50,9 +54,17 @@ const isMac = process.platform === 'darwin';
 
 function toAppError(error: unknown): AppError {
   if (error instanceof Error) {
+    const candidate = error as Error & {
+      code?: unknown;
+      hint?: unknown;
+      raw?: unknown;
+    };
+
     return {
-      code: 'APP_ERROR',
-      message: error.message
+      code: typeof candidate.code === 'string' ? candidate.code : 'APP_ERROR',
+      message: error.message,
+      hint: typeof candidate.hint === 'string' ? candidate.hint : undefined,
+      raw: typeof candidate.raw === 'string' ? candidate.raw : undefined
     };
   }
 
@@ -100,6 +112,12 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('git:getIdentity', async (): Promise<AppResult<GitIdentity>> => runQuery(() => getGitIdentity()));
 
+  ipcMain.handle(
+    'git:getIncomingDelta',
+    async (_event, options: GitRemoteTarget): Promise<AppResult<IncomingDeltaResult>> =>
+      runQuery(() => getIncomingDelta(options))
+  );
+
   ipcMain.handle('git:stage', async (_event, paths: string[]): Promise<AppResult<null>> => runMutation(() => stage(paths)));
 
   ipcMain.handle('git:unstage', async (_event, paths: string[]): Promise<AppResult<null>> =>
@@ -130,6 +148,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('repo:writeMarkdownFile', async (_event, input: SaveFileInput): Promise<AppResult<FileContentResult>> =>
     runQuery(() => writeMarkdownFile(input))
+  );
+
+  ipcMain.handle('repo:getCodeOwnerHints', async (_event, paths: string[]): Promise<AppResult<CodeOwnerHintsResult>> =>
+    runQuery(() => getCodeOwnerHints(paths))
   );
 
   ipcMain.handle('comments:get', async (_event, scope: CommentScope): Promise<AppResult<CommentThread[]>> =>

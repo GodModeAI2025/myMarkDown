@@ -7,7 +7,10 @@ Git-native desktop Markdown workspace.
 - React + TypeScript renderer
 - Dual editor: WYSIWYG and Markdown source mode (single markdown state)
 - Git workflow: status, diff, stage/unstage, commit, fetch/pull(rebase)/push
+- Incoming remote delta preview with conflict-candidate hints
 - Sidecar comments in `.comments/<escaped-target>.comments.json`
+- CODEOWNERS path hints for changed/active markdown files
+- Policy/auth-aware Git error hints (protected branch, auth, non-fast-forward, conflicts)
 - Release gate: release blocked while open comments exist in scope
 
 ## Run

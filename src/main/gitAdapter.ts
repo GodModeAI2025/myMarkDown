@@ -3,11 +3,37 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { GitDiffTarget, GitRemoteTarget, GitStatusEntry, GitStatusResult } from '../shared/contracts';
+import type {
+  GitDiffTarget,
+  GitRemoteTarget,
+  GitStatusEntry,
+  GitStatusResult,
+  IncomingDeltaResult
+} from '../shared/contracts';
 
 const execFileAsync = promisify(execFile);
 
 let currentRepositoryPath: string | null = null;
+
+type GitFailure = {
+  code: string;
+  message: string;
+  hint?: string;
+};
+
+export class GitCommandError extends Error {
+  code: string;
+  hint?: string;
+  raw?: string;
+
+  constructor(input: { code: string; message: string; hint?: string; raw?: string }) {
+    super(input.message);
+    this.name = 'GitCommandError';
+    this.code = input.code;
+    this.hint = input.hint;
+    this.raw = input.raw;
+  }
+}
 
 function parseBranchLine(line: string): {
   branch: string | null;
@@ -88,13 +114,91 @@ function parseStatusEntries(lines: string[]): GitStatusEntry[] {
     });
 }
 
-async function runGit(repoPath: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('git', ['-C', repoPath, ...args], {
-    maxBuffer: 10 * 1024 * 1024,
-    encoding: 'utf8'
-  });
+function uniquePaths(paths: string[]): string[] {
+  return [...new Set(paths.map((item) => item.trim()).filter((item) => item.length > 0))];
+}
 
-  return stdout;
+function classifyGitFailure(rawOutput: string, args: string[]): GitFailure {
+  const lower = rawOutput.toLowerCase();
+
+  if (
+    /gh006|protected branch|protected branch hook declined|branch is protected|cannot push to protected branch/.test(lower)
+  ) {
+    return {
+      code: 'GIT_POLICY_PROTECTED_BRANCH',
+      message: 'Push blocked by remote branch protection policy.',
+      hint: 'Arbeite auf einem Feature-Branch und integriere über Pull Request.'
+    };
+  }
+
+  if (
+    /authentication failed|could not read username|permission denied \(publickey\)|repository not found|access denied|fatal: could not/gi.test(
+      lower
+    )
+  ) {
+    return {
+      code: 'GIT_AUTH_REQUIRED',
+      message: 'Authentication to the remote repository failed.',
+      hint: 'Prüfe Git-Login (PAT/SSH/OAuth) und wiederhole Fetch/Pull/Push.'
+    };
+  }
+
+  if (/has no upstream branch/.test(lower)) {
+    return {
+      code: 'GIT_UPSTREAM_REQUIRED',
+      message: 'Push failed because no upstream branch is configured.',
+      hint: 'Gib im UI den Branch an oder setze den Upstream für den aktuellen Branch.'
+    };
+  }
+
+  if (/non-fast-forward|\[rejected\]|fetch first|failed to push some refs/.test(lower)) {
+    return {
+      code: 'GIT_NON_FAST_FORWARD',
+      message: 'Push rejected because remote contains newer commits.',
+      hint: 'Führe zuerst Fetch/Pull (Rebase) aus, löse Konflikte und pushe danach erneut.'
+    };
+  }
+
+  if (/merge conflict|conflict|could not apply|resolve all conflicts manually/.test(lower)) {
+    return {
+      code: 'GIT_MERGE_CONFLICT',
+      message: 'Git operation reported merge/rebase conflicts.',
+      hint: 'Konflikte lokal auflösen, Dateien stage/committen und danach erneut synchronisieren.'
+    };
+  }
+
+  return {
+    code: 'GIT_COMMAND_FAILED',
+    message: `Git command failed: git ${args.join(' ')}`,
+    hint: 'Prüfe die Git-Ausgabe und den Repository-Status.'
+  };
+}
+
+async function runGit(repoPath: string, args: string[]): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', repoPath, ...args], {
+      maxBuffer: 10 * 1024 * 1024,
+      encoding: 'utf8'
+    });
+
+    return stdout;
+  } catch (error) {
+    const gitError = error as NodeJS.ErrnoException & {
+      stdout?: string;
+      stderr?: string;
+    };
+
+    const raw = [gitError.stdout, gitError.stderr, gitError.message]
+      .filter((chunk): chunk is string => typeof chunk === 'string' && chunk.trim().length > 0)
+      .join('\n')
+      .trim();
+
+    const classified = classifyGitFailure(raw, args);
+    throw new GitCommandError({
+      ...classified,
+      raw
+    });
+  }
 }
 
 export function getOpenRepositoryPath(): string {
@@ -232,6 +336,61 @@ export async function getGitIdentity(): Promise<{ name: string | null; email: st
 
   const [name, email] = await Promise.all([safeGetConfig('user.name'), safeGetConfig('user.email')]);
   return { name, email };
+}
+
+export async function getIncomingDelta(options: GitRemoteTarget = {}): Promise<IncomingDeltaResult> {
+  const repositoryPath = getOpenRepositoryPath();
+  const status = await getStatus();
+
+  const baseRef = status.branch ?? 'HEAD';
+  const remote = options.remote?.trim() || 'origin';
+  const branch = options.branch?.trim() || status.branch;
+  const remoteRef = status.trackingBranch || (branch ? `${remote}/${branch}` : null);
+
+  if (!remoteRef) {
+    return {
+      baseRef,
+      remoteRef: null,
+      incomingCommitCount: 0,
+      incomingFiles: [],
+      conflictCandidates: []
+    };
+  }
+
+  try {
+    await runGit(repositoryPath, ['rev-parse', '--verify', remoteRef]);
+  } catch {
+    return {
+      baseRef,
+      remoteRef,
+      incomingCommitCount: 0,
+      incomingFiles: [],
+      conflictCandidates: []
+    };
+  }
+
+  const [incomingFilesRaw, incomingCountRaw, localStatusRaw] = await Promise.all([
+    runGit(repositoryPath, ['diff', '--name-only', `HEAD..${remoteRef}`]),
+    runGit(repositoryPath, ['rev-list', '--count', `HEAD..${remoteRef}`]),
+    runGit(repositoryPath, ['status', '--porcelain'])
+  ]);
+
+  const incomingFiles = uniquePaths(incomingFilesRaw.split('\n'));
+  const localEntries = parseStatusEntries(localStatusRaw.split('\n'));
+  const localPaths = new Set(
+    localEntries.flatMap((entry) => [entry.path, entry.originalPath || '']).filter((item) => item.length > 0)
+  );
+
+  const conflictCandidates = incomingFiles.filter((filePath) => localPaths.has(filePath));
+  const incomingCommitCount = Number.parseInt(incomingCountRaw.trim(), 10);
+
+  return {
+    baseRef,
+    remoteRef,
+    incomingCommitCount: Number.isFinite(incomingCommitCount) ? incomingCommitCount : 0,
+    incomingFiles,
+    conflictCandidates
+  };
 }
 
 export async function ensureWorkingTreeClean(): Promise<void> {

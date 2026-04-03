@@ -3,6 +3,7 @@ import type {
   AppendCommentInput,
   AppResult,
   CloseCommentInput,
+  CodeOwnerHintsResult,
   CommentScope,
   CommentThread,
   CreateCommentInput,
@@ -11,6 +12,7 @@ import type {
   GitDiffTarget,
   GitRemoteTarget,
   GitStatusResult,
+  IncomingDeltaResult,
   MarkdownFileEntry,
   OpenCommentCountResult,
   OpenRepositoryResult,
@@ -33,6 +35,9 @@ const api = {
   },
   getIdentity(): Promise<AppResult<GitIdentity>> {
     return ipcRenderer.invoke('git:getIdentity');
+  },
+  getIncomingDelta(options: GitRemoteTarget): Promise<AppResult<IncomingDeltaResult>> {
+    return ipcRenderer.invoke('git:getIncomingDelta', options);
   },
   stage(paths: string[]): Promise<AppResult<null>> {
     return ipcRenderer.invoke('git:stage', paths);
@@ -60,6 +65,9 @@ const api = {
   },
   writeMarkdownFile(input: SaveFileInput): Promise<AppResult<FileContentResult>> {
     return ipcRenderer.invoke('repo:writeMarkdownFile', input);
+  },
+  getCodeOwnerHints(paths: string[]): Promise<AppResult<CodeOwnerHintsResult>> {
+    return ipcRenderer.invoke('repo:getCodeOwnerHints', paths);
   },
   getComments(scope: CommentScope): Promise<AppResult<CommentThread[]>> {
     return ipcRenderer.invoke('comments:get', scope);

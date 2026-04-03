@@ -52,6 +52,14 @@ export interface GitIdentity {
   email: string | null;
 }
 
+export interface IncomingDeltaResult {
+  baseRef: string;
+  remoteRef: string | null;
+  incomingCommitCount: number;
+  incomingFiles: string[];
+  conflictCandidates: string[];
+}
+
 export interface MarkdownFileEntry {
   path: string;
 }
@@ -142,4 +150,17 @@ export interface ReleaseVersionResult {
   tag: string;
   targetRef: string;
   pushed: boolean;
+}
+
+export interface CodeOwnerHint {
+  path: string;
+  owners: string[];
+  matchedPattern: string | null;
+  sourceLine: number | null;
+}
+
+export interface CodeOwnerHintsResult {
+  hasCodeownersFile: boolean;
+  codeownersPath: string | null;
+  hints: CodeOwnerHint[];
 }

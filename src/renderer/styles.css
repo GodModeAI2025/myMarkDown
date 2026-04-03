@@ -57,7 +57,7 @@ textarea {
 }
 
 .sync-controls {
-  grid-template-columns: 150px 1fr auto auto auto;
+  grid-template-columns: 150px 1fr auto auto auto auto;
 }
 
 input,
@@ -101,6 +101,10 @@ button:disabled {
   border-radius: 10px;
   background: #e2e8f0;
   padding: 10px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  flex-wrap: wrap;
 }
 
 .main-grid {
@@ -175,13 +179,35 @@ button:disabled {
 }
 
 .path {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .rename {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.owner-pill {
   margin-left: auto;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.74rem;
+  padding: 2px 8px;
+}
+
+.owner-pill-none {
+  border-color: #e2e8f0;
+  background: #f8fafc;
   color: #64748b;
 }
 
@@ -191,6 +217,24 @@ button:disabled {
   padding-top: 10px;
   display: grid;
   gap: 8px;
+}
+
+.incoming-box {
+  border: 1px dashed #dbe6f5;
+  border-radius: 10px;
+  padding: 8px;
+  margin-bottom: 8px;
+  font-size: 0.83rem;
+  color: #334155;
+}
+
+.incoming-box p {
+  margin: 4px 0 0;
+}
+
+.incoming-warning {
+  color: #b45309;
+  font-weight: 600;
 }
 
 .editor-toolbar {

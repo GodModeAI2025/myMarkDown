@@ -3,10 +3,12 @@ import type { Editor as ToastEditor } from '@toast-ui/editor';
 import type {
   AppResult,
   CommentThread,
+  CodeOwnerHint,
   EditorMode,
   GitDiffTarget,
   GitStatusEntry,
   GitStatusResult,
+  IncomingDeltaResult,
   MarkdownFileEntry,
   ReleaseGateStatus
 } from '../shared/contracts';
@@ -24,6 +26,14 @@ function statusLabel(entry: GitStatusEntry): string {
 
 function normalizeReleaseId(input: string): string {
   return input.trim().replace(/\s+/g, '-');
+}
+
+function normalizePath(input: string): string {
+  return input.replace(/\\/g, '/').trim();
+}
+
+function uniquePaths(paths: string[]): string[] {
+  return [...new Set(paths.map((item) => normalizePath(item)).filter(Boolean))];
 }
 
 export default function App(): JSX.Element {
@@ -54,6 +64,10 @@ export default function App(): JSX.Element {
   const [activeCommentId, setActiveCommentId] = useState('');
   const [replyText, setReplyText] = useState('');
   const [commentSidecarPath, setCommentSidecarPath] = useState('');
+  const [codeownerHintsByPath, setCodeownerHintsByPath] = useState<Record<string, CodeOwnerHint>>({});
+  const [hasCodeownersFile, setHasCodeownersFile] = useState(false);
+  const [codeownersPath, setCodeownersPath] = useState('');
+  const [incomingDelta, setIncomingDelta] = useState<IncomingDeltaResult | null>(null);
 
   const [releaseTargetRef, setReleaseTargetRef] = useState('HEAD');
   const [releaseId, setReleaseId] = useState('release/v0.1.0');
@@ -63,6 +77,9 @@ export default function App(): JSX.Element {
 
   const changedFiles = status?.files ?? [];
   const isRepoOpen = status !== null;
+  const activeCodeownerHint = activeMarkdownPath
+    ? codeownerHintsByPath[normalizePath(activeMarkdownPath)] ?? null
+    : null;
 
   const branchSummary = useMemo(() => {
     if (!status) {
@@ -83,6 +100,18 @@ export default function App(): JSX.Element {
   }, [activeMarkdownPath, markdownFiles, releaseScopeType]);
 
   const openCommentsInPanel = comments.filter((comment) => comment.state === 'open').length;
+
+  useEffect(() => {
+    if (!status) {
+      setCodeownerHintsByPath({});
+      setHasCodeownersFile(false);
+      setCodeownersPath('');
+      setIncomingDelta(null);
+      return;
+    }
+
+    void refreshCodeOwnerHintsForPaths([...status.files.map((file) => file.path), activeMarkdownPath]);
+  }, [status, activeMarkdownPath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,7 +172,15 @@ export default function App(): JSX.Element {
   async function runQuery<T>(query: () => Promise<AppResult<T>>, successText?: string): Promise<T | null> {
     const result = await query();
     if (!result.ok) {
-      setNotice({ kind: 'error', text: result.error.message });
+      const errorDetails = [result.error.message];
+      if (result.error.hint) {
+        errorDetails.push(result.error.hint);
+      }
+      if (result.error.code && result.error.code !== 'APP_ERROR' && result.error.code !== 'UNKNOWN_ERROR') {
+        errorDetails.push(`(${result.error.code})`);
+      }
+
+      setNotice({ kind: 'error', text: errorDetails.join(' ') });
       return null;
     }
 
@@ -191,6 +228,23 @@ export default function App(): JSX.Element {
     setCommentSidecarPath(sidecarPath);
   }
 
+  async function refreshCodeOwnerHintsForPaths(paths: string[]): Promise<void> {
+    const targetPaths = uniquePaths(paths);
+    const hintsData = await runQuery(() => window.myMarkdown.getCodeOwnerHints(targetPaths));
+    if (!hintsData) {
+      return;
+    }
+
+    const nextHints: Record<string, CodeOwnerHint> = {};
+    hintsData.hints.forEach((hint) => {
+      nextHints[normalizePath(hint.path)] = hint;
+    });
+
+    setCodeownerHintsByPath(nextHints);
+    setHasCodeownersFile(hintsData.hasCodeownersFile);
+    setCodeownersPath(hintsData.codeownersPath ?? '');
+  }
+
   async function refreshMarkdownFiles(): Promise<void> {
     const files = await runQuery(() => window.myMarkdown.listMarkdownFiles());
     if (!files) {
@@ -210,7 +264,29 @@ export default function App(): JSX.Element {
     const currentStillExists = activeMarkdownPath && files.some((file) => file.path === activeMarkdownPath);
     if (!currentStillExists) {
       await loadMarkdownFile(files[0].path);
+      return;
     }
+  }
+
+  function currentRemoteTarget(): { remote: string; branch?: string } {
+    return {
+      remote: remoteInput.trim() || 'origin',
+      branch: branchInput.trim() || undefined
+    };
+  }
+
+  async function refreshIncomingDelta(showNotice = false): Promise<void> {
+    const target = currentRemoteTarget();
+    const incoming = await runQuery(
+      () => window.myMarkdown.getIncomingDelta(target),
+      showNotice ? 'Incoming delta refreshed.' : undefined
+    );
+
+    if (!incoming) {
+      return;
+    }
+
+    setIncomingDelta(incoming);
   }
 
   async function refreshStatus(showSpinner = false): Promise<void> {
@@ -240,10 +316,6 @@ export default function App(): JSX.Element {
     await refreshCommentsForPath(activeMarkdownPath);
   }
 
-  async function refreshCommentSidecarPath(): Promise<void> {
-    await refreshCommentSidecarPathForPath(activeMarkdownPath);
-  }
-
   async function openRepository(): Promise<void> {
     if (!repoInput.trim()) {
       setNotice({ kind: 'error', text: 'Please enter a repository path.' });
@@ -262,6 +334,7 @@ export default function App(): JSX.Element {
     }
 
     await Promise.all([refreshStatus(false), refreshMarkdownFiles(), refreshIdentity()]);
+    await refreshIncomingDelta(false);
     setBusy(false);
   }
 
@@ -372,14 +445,12 @@ export default function App(): JSX.Element {
 
   async function fetchRemote(): Promise<void> {
     setBusy(true);
-    const target = {
-      remote: remoteInput.trim() || 'origin',
-      branch: branchInput.trim() || undefined
-    };
+    const target = currentRemoteTarget();
 
     const fetched = await runQuery(() => window.myMarkdown.fetch(target), `Fetched from ${target.remote}.`);
     if (fetched !== null) {
       await refreshStatus(false);
+      await refreshIncomingDelta(false);
     }
 
     setBusy(false);
@@ -387,16 +458,14 @@ export default function App(): JSX.Element {
 
   async function pullRemote(): Promise<void> {
     setBusy(true);
-    const target = {
-      remote: remoteInput.trim() || 'origin',
-      branch: branchInput.trim() || undefined
-    };
+    const target = currentRemoteTarget();
 
     const pulled = await runQuery(() => window.myMarkdown.pull(target), `Pulled from ${target.remote}.`);
     if (pulled !== null) {
       await refreshStatus(false);
       await refreshMarkdownFiles();
       await refreshComments();
+      await refreshIncomingDelta(false);
     }
 
     setBusy(false);
@@ -404,14 +473,12 @@ export default function App(): JSX.Element {
 
   async function pushRemote(): Promise<void> {
     setBusy(true);
-    const target = {
-      remote: remoteInput.trim() || 'origin',
-      branch: branchInput.trim() || undefined
-    };
+    const target = currentRemoteTarget();
 
     const pushed = await runQuery(() => window.myMarkdown.push(target), `Pushed to ${target.remote}.`);
     if (pushed !== null) {
       await refreshStatus(false);
+      await refreshIncomingDelta(false);
     }
 
     setBusy(false);
@@ -683,12 +750,28 @@ export default function App(): JSX.Element {
         <button onClick={pushRemote} disabled={busy || !isRepoOpen}>
           Push
         </button>
+        <button onClick={() => refreshIncomingDelta(true)} disabled={busy || !isRepoOpen}>
+          Incoming Delta
+        </button>
       </section>
 
       <section className={`notice ${notice.kind}`}>{notice.text}</section>
 
       <section className="status-bar">
-        <strong>Branch:</strong> {branchSummary}
+        <span>
+          <strong>Branch:</strong> {branchSummary}
+        </span>
+        <span>
+          <strong>CODEOWNERS:</strong> {hasCodeownersFile ? codeownersPath || 'CODEOWNERS' : 'not found'}
+        </span>
+        <span>
+          <strong>Incoming:</strong>{' '}
+          {incomingDelta
+            ? incomingDelta.remoteRef
+              ? `${incomingDelta.incomingCommitCount} commit(s), ${incomingDelta.incomingFiles.length} file(s)`
+              : 'no tracking branch'
+            : 'not checked'}
+        </span>
       </section>
 
       <main className="main-grid">
@@ -711,22 +794,61 @@ export default function App(): JSX.Element {
             </div>
           </div>
 
+          <div className="incoming-box">
+            <strong>Remote Delta</strong>
+            {incomingDelta ? (
+              incomingDelta.remoteRef ? (
+                <>
+                  <p>
+                    Source: {incomingDelta.remoteRef} | commits: {incomingDelta.incomingCommitCount} | files:{' '}
+                    {incomingDelta.incomingFiles.length}
+                  </p>
+                  <p className={incomingDelta.conflictCandidates.length > 0 ? 'incoming-warning' : ''}>
+                    Conflict candidates:{' '}
+                    {incomingDelta.conflictCandidates.length > 0
+                      ? incomingDelta.conflictCandidates.join(', ')
+                      : 'none'}
+                  </p>
+                </>
+              ) : (
+                <p>No tracking branch configured.</p>
+              )
+            ) : (
+              <p>Run fetch or Incoming Delta to inspect remote changes.</p>
+            )}
+          </div>
+
           {changedFiles.length === 0 ? (
             <p>No changes.</p>
           ) : (
             <ul>
-              {changedFiles.map((file) => (
-                <li key={`${file.path}-${file.indexStatus}-${file.workTreeStatus}`}>
-                  <button
-                    className={selectedChangedPath === file.path ? 'selected' : ''}
-                    onClick={() => showDiff(file.path)}
-                  >
-                    <span className="status-pill">{statusLabel(file)}</span>
-                    <span className="path">{file.path}</span>
-                    {file.originalPath ? <span className="rename">(from {file.originalPath})</span> : null}
-                  </button>
-                </li>
-              ))}
+              {changedFiles.map((file) => {
+                const hint = codeownerHintsByPath[normalizePath(file.path)];
+                const hasOwners = Boolean(hint && hint.owners.length > 0);
+
+                return (
+                  <li key={`${file.path}-${file.indexStatus}-${file.workTreeStatus}`}>
+                    <button
+                      className={selectedChangedPath === file.path ? 'selected' : ''}
+                      onClick={() => showDiff(file.path)}
+                    >
+                      <span className="status-pill">{statusLabel(file)}</span>
+                      <span className="path">{file.path}</span>
+                      {hasOwners ? (
+                        <span
+                          className="owner-pill"
+                          title={hint?.matchedPattern ? `CODEOWNERS pattern: ${hint.matchedPattern}` : 'CODEOWNERS'}
+                        >
+                          {hint?.owners.join(', ')}
+                        </span>
+                      ) : hasCodeownersFile ? (
+                        <span className="owner-pill owner-pill-none">unowned</span>
+                      ) : null}
+                      {file.originalPath ? <span className="rename">(from {file.originalPath})</span> : null}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
 
@@ -785,6 +907,14 @@ export default function App(): JSX.Element {
             <span>Active File: {activeMarkdownPath || 'none'}</span>
             <span>Dirty: {editorDirty ? 'yes' : 'no'}</span>
             <span>Sidecar: {commentSidecarPath || '-'}</span>
+            <span>
+              Owners:{' '}
+              {activeCodeownerHint && activeCodeownerHint.owners.length > 0
+                ? activeCodeownerHint.owners.join(', ')
+                : hasCodeownersFile
+                  ? 'unowned'
+                  : '-'}
+            </span>
           </div>
 
           <div ref={editorMountRef} className="editor-mount" />
