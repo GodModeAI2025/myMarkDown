@@ -25,6 +25,12 @@ function statusLabel(entry: GitStatusEntry): string {
   return `${entry.indexStatus}${entry.workTreeStatus}`.trim();
 }
 
+const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
+
+function isConflictEntry(entry: GitStatusEntry): boolean {
+  return CONFLICT_CODES.has(`${entry.indexStatus}${entry.workTreeStatus}`);
+}
+
 function normalizeReleaseId(input: string): string {
   return input.trim().replace(/\s+/g, '-');
 }
@@ -81,6 +87,7 @@ export default function App(): JSX.Element {
   const [releaseGate, setReleaseGate] = useState<ReleaseGateStatus | null>(null);
 
   const changedFiles = status?.files ?? [];
+  const conflictFiles = changedFiles.filter((entry) => isConflictEntry(entry));
   const isRepoOpen = status !== null;
   const activeCodeownerHint = activeMarkdownPath
     ? codeownerHintsByPath[normalizePath(activeMarkdownPath)] ?? null
@@ -906,6 +913,9 @@ export default function App(): JSX.Element {
               : 'no tracking branch'
             : 'not checked'}
         </span>
+        <span className={conflictFiles.length > 0 ? 'status-conflicts' : ''}>
+          <strong>Conflicts:</strong> {conflictFiles.length}
+        </span>
       </section>
 
       <section className="search-panel">
@@ -1007,11 +1017,14 @@ export default function App(): JSX.Element {
                 return (
                   <li key={`${file.path}-${file.indexStatus}-${file.workTreeStatus}`}>
                     <button
-                      className={selectedChangedPath === file.path ? 'selected' : ''}
+                      className={`${selectedChangedPath === file.path ? 'selected' : ''} ${
+                        isConflictEntry(file) ? 'selected-conflict' : ''
+                      }`.trim()}
                       onClick={() => showDiff(file.path)}
                     >
                       <span className="status-pill">{statusLabel(file)}</span>
                       <span className="path">{file.path}</span>
+                      {isConflictEntry(file) ? <span className="conflict-pill">CONFLICT</span> : null}
                       {hasOwners ? (
                         <span
                           className="owner-pill"

@@ -112,6 +112,11 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.status-conflicts {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
 .search-panel {
   border-radius: 10px;
   border: 1px solid #dbe6f5;
@@ -215,6 +220,11 @@ button:disabled {
   background: #f0f9ff;
 }
 
+.files-panel button.selected-conflict {
+  border-color: #fca5a5;
+  background: #fff1f2;
+}
+
 .file-actions,
 .reply-actions {
   display: grid;
@@ -262,6 +272,16 @@ button:disabled {
   border-color: #e2e8f0;
   background: #f8fafc;
   color: #64748b;
+}
+
+.conflict-pill {
+  border-radius: 999px;
+  border: 1px solid #fecaca;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 7px;
 }
 
 .commit-box {
