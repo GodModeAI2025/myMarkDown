@@ -1,0 +1,323 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.45;
+  color: #0f172a;
+  background: linear-gradient(180deg, #eef4ff 0%, #f8fafc 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.65rem;
+}
+
+.header p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.repo-open,
+.sync-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.repo-open {
+  grid-template-columns: 1fr auto auto;
+}
+
+.sync-controls {
+  grid-template-columns: 150px 1fr auto auto auto;
+}
+
+input,
+select,
+textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: #ffffff;
+}
+
+button {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.notice {
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.notice.info {
+  background: #e0f2fe;
+  color: #0c4a6e;
+}
+
+.notice.error {
+  background: #fee2e2;
+  color: #7f1d1d;
+}
+
+.status-bar {
+  border-radius: 10px;
+  background: #e2e8f0;
+  padding: 10px;
+}
+
+.main-grid {
+  display: grid;
+  grid-template-columns: 300px 1fr 390px;
+  gap: 10px;
+  min-height: 0;
+  flex: 1;
+}
+
+.panel {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #dbe6f5;
+  padding: 12px;
+  min-height: 320px;
+}
+
+.panel h2,
+.panel h3 {
+  margin: 0;
+}
+
+.panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.files-panel ul,
+.comment-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 330px;
+  overflow: auto;
+}
+
+.files-panel button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.files-panel button.selected,
+.active-mode,
+.active-thread {
+  border-color: #0284c7;
+  background: #f0f9ff;
+}
+
+.file-actions,
+.reply-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.status-pill {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #f1f5f9;
+  border-radius: 6px;
+  padding: 2px 6px;
+  min-width: 34px;
+  text-align: center;
+}
+
+.path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rename {
+  margin-left: auto;
+  color: #64748b;
+}
+
+.commit-box {
+  margin-top: 10px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.editor-toolbar {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: 1fr auto auto auto;
+}
+
+.editor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.editor-mount {
+  min-height: 420px;
+}
+
+.editor-mount .toastui-editor-defaultUI {
+  border-radius: 10px;
+  border-color: #d6e0ef;
+}
+
+.diff-preview {
+  margin-top: 8px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 8px;
+}
+
+.diff-preview pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 0.8rem;
+}
+
+.comments-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comment-create,
+.comment-reply,
+.release-box {
+  display: grid;
+  gap: 6px;
+}
+
+.comment-create textarea,
+.comment-reply textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.comment-list {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 6px;
+}
+
+.comment-list li {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 7px;
+  cursor: pointer;
+}
+
+.comment-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.8rem;
+  color: #334155;
+}
+
+.comment-body p {
+  margin: 4px 0 0;
+  font-size: 0.86rem;
+}
+
+.checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #334155;
+}
+
+.release-state {
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 0.88rem;
+}
+
+.release-state p {
+  margin: 2px 0;
+}
+
+@media (max-width: 1300px) {
+  .main-grid {
+    grid-template-columns: 280px 1fr;
+  }
+
+  .comments-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1020px) {
+  .repo-open,
+  .sync-controls,
+  .editor-toolbar,
+  .main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
