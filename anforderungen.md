@@ -42,18 +42,20 @@ Harte Vorgabe: Das einzige Backend ist Git (Remote-Repository). Die App läuft l
 - Kommentare: `*.json` in `.comments/` mit Referenz auf Zieldatei und Textanker.
 
 ### 4.3 Führende Datenhaltung in Git
-- FR-DATA-001: Der fachlich gültige Stand ist immer der Git-Stand (Working Tree + Commit-Historie + Remote).
+- FR-DATA-001: Der fachlich gültige Stand für Sync/Freigabe ist immer ein Git-Ref (`commit SHA` oder `branch HEAD`); der Working Tree ist ein lokaler Entwurfszustand bis zum Commit.
 - FR-DATA-002: Lokale App-Daten (Index, Suche, UI-State) sind nicht autoritativ und dürfen Inhalte nicht dauerhaft von Git entkoppeln.
 - FR-DATA-003: Jede persistente Inhaltsänderung wird als Git-Dateiänderung abgebildet und ist per Commit nachvollziehbar.
 
 Akzeptanzkriterien:
 - Nach Löschen aller lokalen Cache-Dateien ist der vollständige Zustand durch erneutes Laden aus dem Repo reproduzierbar.
 - Es existiert keine zweite persistente Inhaltsquelle außerhalb des Repositories.
+- Freigabeentscheidungen basieren ausschließlich auf dem gewählten `targetRef`, nicht auf unstaged/staged Working-Tree-Daten.
 
 ### 4.4 Kommentar-Sidecar-Modell (Git-basiert)
 - FR-DATA-010: Zu jeder kommentierbaren Markdown-Datei kann eine Sidecar-Datei unter `.comments/` geführt werden.
 - FR-DATA-011: Kommentarobjekte enthalten mindestens `id`, `targetPath`, `anchor`, `author`, `state`, `createdAt`, `updatedAt`, `thread`.
 - FR-DATA-012: Der finale Markdown-Inhalt unter `docs/` und `books/` enthält keine persistierten Kommentarblöcke oder Kommentar-Marker.
+- FR-DATA-013: Sidecar-Dateinaming ist verbindlich `eine Datei pro Markdown-Datei`: `.comments/<escaped-target>.comments.json`.
 
 Akzeptanzkriterien:
 - Beim Erstellen/Ergänzen/Schließen von Kommentaren ändern sich nur Sidecar-Dateien, nicht der fachliche Markdown-Inhalt.
@@ -116,6 +118,8 @@ Akzeptanzkriterien:
 - FR-GIT-003: Commit-Vorlagen (Conventional Commit optional).
 - FR-GIT-004: Diff-Ansicht vor Commit und vor Push.
 - FR-GIT-005: Aktive Git-Identität (Benutzer/Account) wird angezeigt; Account-Wechsel für private Repos ist möglich.
+- FR-GIT-006: Standard-Sync-Strategie ist `rebase` für lokale Synchronisation; Integrationen auf `main` erfolgen über Pull Requests.
+- FR-GIT-007: MVP-Provider-Priorität ist `GitHub` (weitere Provider folgen über Adapter).
 
 ### 7.3 Struktur und Navigation
 - FR-INFO-001: Navigation folgt realer Ordnerstruktur im Repo.
@@ -128,20 +132,21 @@ Akzeptanzkriterien:
 - FR-COL-002: Kommentare werden in Git als Sidecar-Dateien geführt; die App rendert sie als Overlay zur Markdown-Datei.
 - FR-COL-003: Keine serverseitige Echtzeit-Presence als Pflichtfunktion im MVP.
 - FR-COL-004: Für den Freigabe-Check werden Sidecar-Kommentare in einen einheitlichen `open/closed` Status abgebildet.
-- FR-COL-005: PR-Review-Kommentare können optional gespiegelt werden, aber die Freigabelogik wertet den Git-Sidecar-Store aus.
+- FR-COL-005: PR-Review-Kommentare können optional gespiegelt werden; bei Abweichung ist der Git-Sidecar-Store für den Freigabe-Check autoritativ.
 
 ### 7.5 Freigabe- und Kommentarregeln
+- FR-REL-000: Freigabe-Scope ist formal definiert als `targetRef + freizugebende Pfadmenge + zugeordnete Sidecar-Kommentare`.
 - FR-REL-001: Eine Version darf nur freigegeben werden, wenn es im Freigabe-Scope keine offenen Kommentare gibt.
 - FR-REL-002: Solange mindestens ein Kommentar offen ist, ist die Aktion `Version freigeben` blockiert.
 - FR-REL-003: Offene Kommentare dürfen von anderen Nutzern ergänzt werden (Antworten/Erweiterungen).
-- FR-REL-004: Kommentare dürfen von allen Nutzern geschlossen werden.
+- FR-REL-004: Kommentare dürfen von allen Nutzern geschlossen werden, die Schreibrecht auf den zugehörigen Sidecar-Pfad besitzen.
 - FR-REL-005: Vor der Freigabe wird die Anzahl offener Kommentare explizit angezeigt.
 
 Akzeptanzkriterien:
 - Bei `open_comments > 0` ist Freigabe technisch gesperrt und die UI zeigt die offenen Threads.
 - Bei `open_comments = 0` wird die Freigabeaktion sofort freigeschaltet.
 - Ergänzungen durch andere Nutzer werden im Kommentarverlauf mit Autor und Zeit sichtbar.
-- Jeder angemeldete Nutzer mit Kommentarzugriff kann einen Kommentar schließen.
+- Jeder Nutzer mit Schreibrecht auf den betreffenden Sidecar-Pfad kann einen Kommentar schließen.
 - Beim Freigeben bleibt die Markdown-Zieldatei frei von Kommentar-Inhalt; nur Sidecar-Status kann sich ändern.
 
 ## 8. Nicht-funktionale Anforderungen
@@ -163,6 +168,7 @@ Akzeptanzkriterien:
 ### 8.4 Plattform
 - NFR-030: Electron auf macOS, Windows, Linux.
 - NFR-031: Keine Root-Rechte erforderlich.
+- NFR-032: Mindestvoraussetzungen für Entwicklung/Build: `Node LTS`, `Git >= 2.40`.
 
 ### 8.5 UI-Prinzipien nach Apple Human Interface Guidelines (HIG)
 - NFR-040: Das UI folgt den HIG-Grundprinzipien `Hierarchy`, `Harmony`, `Consistency`.
@@ -237,7 +243,7 @@ Referenzquellen (normativ):
 - AT-007: Privates Repo kann mit gültigem Git-Login geklont/synchronisiert werden; ohne Login erscheint ein klarer Auth-Fehler mit Handlungsvorschlag.
 - AT-008: Freigabe ist blockiert, solange mindestens ein Kommentar offen ist.
 - AT-009: Ein anderer Nutzer kann einen offenen Kommentar ergänzen; Verlauf zeigt Autor/Zeit.
-- AT-010: Jeder Nutzer mit Kommentarzugriff kann Kommentare schließen; danach wird Freigabe bei `0` offenen Kommentaren erlaubt.
+- AT-010: Jeder Nutzer mit Schreibrecht auf den Sidecar-Pfad kann Kommentare schließen; danach wird Freigabe bei `0` offenen Kommentaren erlaubt.
 - AT-011: Kommentare werden ausschließlich in `.comments/` persistiert; die betroffene `*.md` bleibt ohne Kommentartext/-marker.
 - AT-012: WYSIWYG- und Markdown-Codeansicht sind bidirektional synchron und beim Umschalten tritt kein Inhaltsverlust auf.
 - AT-013: HIG-Review-Checklist für macOS ist erfüllt (Hierarchy/Harmony/Consistency, Toolbar/Overflow, Menüleistenbefehle, Search Field, Accessibility-Basics).
@@ -309,11 +315,11 @@ Ein Ticket ist fertig, wenn:
 11. Als Reviewer kann ich offene Kommentare ergänzen, auch wenn sie von anderen erstellt wurden.
 12. Als Publisher kann ich eine Version nur freigeben, wenn alle Kommentare geschlossen sind.
 
-## 17. Offene Entscheidungen
-- Exaktes Dateinaming der Sidecar-Dateien (pro Note eine Datei vs. pro Thread eine Datei).
-- Welche Merge-Strategie ist Standard (merge, rebase, ff-only)?
-- Welche Mindest-Git-Version ist Voraussetzung?
-- Welche Provider kommen in MVP sicher rein (GitHub zuerst)?
+## 17. Festgelegte Defaults (2026-04-03)
+- Sidecar-Naming: `.comments/<escaped-target>.comments.json` (eine Datei pro Markdown-Datei).
+- Standard-Sync: `rebase` lokal, Integration auf `main` über Pull Requests.
+- Mindestvoraussetzungen: `Node LTS`, `Git >= 2.40`.
+- MVP-Provider-Priorität: `GitHub`.
 
 ## 18. Nächster Schritt
 Technisches ADR erstellen mit:
