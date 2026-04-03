@@ -20,6 +20,9 @@ Git-native desktop Markdown workspace.
 - Empty-repo bootstrap: initializes required project structure (markdown + folders) automatically
 - Git-friendly folder placeholders (`.gitkeep`) to represent otherwise-empty directories
 - Conflict resolution actions in-app (`Use Ours` / `Use Theirs`) with direct diff context
+- Hardened renderer error handling for unexpected IPC/runtime failures
+- Stable one-time app menu subscription (reduced event re-subscription churn)
+- Extended parser/unit coverage for repository-state derivation logic
 - Dedicated settings section for app configuration (language, theme, remote, default branch)
 - Local draft autosave + recovery prompt per repository/file
 - Sidecar comments in `.comments/<escaped-target>.comments.json`

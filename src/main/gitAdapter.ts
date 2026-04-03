@@ -121,6 +121,28 @@ function uniquePaths(paths: string[]): string[] {
   return [...new Set(paths.map((item) => item.trim()).filter((item) => item.length > 0))];
 }
 
+export function deriveRepositoryState(input: {
+  repositoryPath: string;
+  trackedFilesRaw: string;
+  statusPorcelainRaw: string;
+  hasCommits: boolean;
+}): RepositoryState {
+  const trackedFiles = uniquePaths(input.trackedFilesRaw.split('\n'));
+  const statusLines = input.statusPorcelainRaw
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+  const untrackedFileCount = statusLines.filter((line) => line.startsWith('?? ')).length;
+
+  return {
+    repositoryPath: input.repositoryPath,
+    hasCommits: input.hasCommits,
+    trackedFileCount: trackedFiles.length,
+    untrackedFileCount,
+    isEmpty: !input.hasCommits && trackedFiles.length === 0 && statusLines.length === 0
+  };
+}
+
 function classifyGitFailure(rawOutput: string, args: string[]): GitFailure {
   const lower = rawOutput.toLowerCase();
 
@@ -135,7 +157,7 @@ function classifyGitFailure(rawOutput: string, args: string[]): GitFailure {
   }
 
   if (
-    /authentication failed|could not read username|permission denied \(publickey\)|repository not found|access denied|fatal: could not/gi.test(
+    /authentication failed|could not read username|permission denied \(publickey\)|repository not found|access denied|fatal: could not/i.test(
       lower
     )
   ) {
@@ -264,20 +286,12 @@ export async function inspectRepositoryState(): Promise<RepositoryState> {
     hasHeadCommit(repositoryPath)
   ]);
 
-  const trackedFiles = uniquePaths(trackedRaw.split('\n'));
-  const statusLines = statusRaw
-    .split('\n')
-    .map((line) => line.trimEnd())
-    .filter((line) => line.length > 0);
-  const untrackedFileCount = statusLines.filter((line) => line.startsWith('?? ')).length;
-
-  return {
+  return deriveRepositoryState({
     repositoryPath,
-    hasCommits,
-    trackedFileCount: trackedFiles.length,
-    untrackedFileCount,
-    isEmpty: !hasCommits && trackedFiles.length === 0 && statusLines.length === 0
-  };
+    trackedFilesRaw: trackedRaw,
+    statusPorcelainRaw: statusRaw,
+    hasCommits
+  });
 }
 
 export async function getStatus(): Promise<GitStatusResult> {

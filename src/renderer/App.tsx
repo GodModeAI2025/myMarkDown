@@ -38,6 +38,20 @@ type SetupConfig = {
   configuredAt: string;
 };
 
+type MenuRuntimeState = {
+  busy: boolean;
+  isRepoOpen: boolean;
+  hasCommitMessage: boolean;
+  openRepositoryPicker: () => void;
+  refreshStatus: () => void;
+  saveActiveFile: () => void;
+  commitChanges: () => void;
+  fetchRemote: () => void;
+  pullRemote: () => void;
+  pushRemote: () => void;
+  refreshIncomingDelta: () => void;
+};
+
 const SETUP_CONFIG_KEY = 'mymarkdown:setup:v1';
 
 function statusLabel(entry: GitStatusEntry): string {
@@ -156,6 +170,19 @@ export default function App(): JSX.Element {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const commitInputRef = useRef<HTMLInputElement | null>(null);
   const autoOpenAttemptedRef = useRef(false);
+  const menuRuntimeRef = useRef<MenuRuntimeState>({
+    busy: false,
+    isRepoOpen: false,
+    hasCommitMessage: false,
+    openRepositoryPicker: () => {},
+    refreshStatus: () => {},
+    saveActiveFile: () => {},
+    commitChanges: () => {},
+    fetchRemote: () => {},
+    pullRemote: () => {},
+    pushRemote: () => {},
+    refreshIncomingDelta: () => {}
+  });
   const initialSetupConfig = useMemo(() => loadSetupConfig(), []);
 
   const [showOnboarding, setShowOnboarding] = useState(() => initialSetupConfig === null);
@@ -270,6 +297,36 @@ export default function App(): JSX.Element {
     };
   }, [editorSnapshot, headingItems.length]);
 
+  menuRuntimeRef.current = {
+    busy,
+    isRepoOpen,
+    hasCommitMessage: commitMessage.trim().length > 0,
+    openRepositoryPicker: () => {
+      void pickRepositoryAndOpen();
+    },
+    refreshStatus: () => {
+      void refreshStatus(true);
+    },
+    saveActiveFile: () => {
+      void saveActiveFile();
+    },
+    commitChanges: () => {
+      void commitChanges();
+    },
+    fetchRemote: () => {
+      void fetchRemote();
+    },
+    pullRemote: () => {
+      void pullRemote();
+    },
+    pushRemote: () => {
+      void pushRemote();
+    },
+    refreshIncomingDelta: () => {
+      void refreshIncomingDelta(true);
+    }
+  };
+
   useEffect(() => {
     if (!status) {
       setCodeownerHintsByPath({});
@@ -303,11 +360,17 @@ export default function App(): JSX.Element {
     }
 
     autoOpenAttemptedRef.current = true;
-    void openRepository(repoInput, {
-      showOpenSuccessNotice: false,
-      bootstrapIfEmpty: false,
-      persistConfig: false
-    });
+    void (async () => {
+      const opened = await openRepository(repoInput, {
+        showOpenSuccessNotice: false,
+        bootstrapIfEmpty: false,
+        persistConfig: false
+      });
+
+      if (!opened) {
+        setShowOnboarding(true);
+      }
+    })();
   }, [showOnboarding, repoInput]);
 
   useEffect(() => {
@@ -378,50 +441,51 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const unsubscribe = window.myMarkdown.onMenuAction((action: AppMenuAction) => {
-      if (busy && action !== 'focus-search') {
+      const runtime = menuRuntimeRef.current;
+      if (runtime.busy && action !== 'focus-search') {
         return;
       }
 
       switch (action) {
         case 'open-repository':
-          void pickRepositoryAndOpen();
+          runtime.openRepositoryPicker();
           break;
         case 'refresh-status':
-          if (isRepoOpen) {
-            void refreshStatus(true);
+          if (runtime.isRepoOpen) {
+            runtime.refreshStatus();
           }
           break;
         case 'save-file':
-          if (isRepoOpen) {
-            void saveActiveFile();
+          if (runtime.isRepoOpen) {
+            runtime.saveActiveFile();
           }
           break;
         case 'commit':
-          if (isRepoOpen) {
-            if (!commitMessage.trim()) {
+          if (runtime.isRepoOpen) {
+            if (!runtime.hasCommitMessage) {
               commitInputRef.current?.focus();
             }
-            void commitChanges();
+            runtime.commitChanges();
           }
           break;
         case 'fetch':
-          if (isRepoOpen) {
-            void fetchRemote();
+          if (runtime.isRepoOpen) {
+            runtime.fetchRemote();
           }
           break;
         case 'pull':
-          if (isRepoOpen) {
-            void pullRemote();
+          if (runtime.isRepoOpen) {
+            runtime.pullRemote();
           }
           break;
         case 'push':
-          if (isRepoOpen) {
-            void pushRemote();
+          if (runtime.isRepoOpen) {
+            runtime.pushRemote();
           }
           break;
         case 'incoming-delta':
-          if (isRepoOpen) {
-            void refreshIncomingDelta(true);
+          if (runtime.isRepoOpen) {
+            runtime.refreshIncomingDelta();
           }
           break;
         case 'focus-search':
@@ -442,7 +506,7 @@ export default function App(): JSX.Element {
     return () => {
       unsubscribe();
     };
-  });
+  }, []);
 
   useEffect(() => {
     if (!editorDirty || !activeMarkdownPath || !status?.repositoryPath) {
@@ -483,25 +547,31 @@ export default function App(): JSX.Element {
   }
 
   async function runQuery<T>(query: () => Promise<AppResult<T>>, successText?: string): Promise<T | null> {
-    const result = await query();
-    if (!result.ok) {
-      const errorDetails = [result.error.message];
-      if (result.error.hint) {
-        errorDetails.push(result.error.hint);
-      }
-      if (result.error.code && result.error.code !== 'APP_ERROR' && result.error.code !== 'UNKNOWN_ERROR') {
-        errorDetails.push(`(${result.error.code})`);
+    try {
+      const result = await query();
+      if (!result.ok) {
+        const errorDetails = [result.error.message];
+        if (result.error.hint) {
+          errorDetails.push(result.error.hint);
+        }
+        if (result.error.code && result.error.code !== 'APP_ERROR' && result.error.code !== 'UNKNOWN_ERROR') {
+          errorDetails.push(`(${result.error.code})`);
+        }
+
+        setNotice({ kind: 'error', text: errorDetails.join(' ') });
+        return null;
       }
 
-      setNotice({ kind: 'error', text: errorDetails.join(' ') });
+      if (successText) {
+        setNotice({ kind: 'info', text: successText });
+      }
+
+      return result.data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setNotice({ kind: 'error', text: `${tt('Unexpected error', 'Unerwarteter Fehler')}: ${message}` });
       return null;
     }
-
-    if (successText) {
-      setNotice({ kind: 'info', text: successText });
-    }
-
-    return result.data;
   }
 
   async function refreshIdentity(): Promise<void> {
