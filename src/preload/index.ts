@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   AppendCommentInput,
+  AppMenuAction,
   AppResult,
   CloseCommentInput,
   CodeOwnerHintsResult,
@@ -50,6 +51,20 @@ const api = {
   },
   setUpstream(options: GitRemoteTarget): Promise<AppResult<string>> {
     return ipcRenderer.invoke('git:setUpstream', options);
+  },
+  pickRepositoryDirectory(): Promise<AppResult<string | null>> {
+    return ipcRenderer.invoke('app:pickRepositoryDirectory');
+  },
+  onMenuAction(listener: (action: AppMenuAction) => void): () => void {
+    const channel = 'app:menuAction';
+    const wrapped = (_event: Electron.IpcRendererEvent, action: AppMenuAction) => {
+      listener(action);
+    };
+
+    ipcRenderer.on(channel, wrapped);
+    return () => {
+      ipcRenderer.removeListener(channel, wrapped);
+    };
   },
   stage(paths: string[]): Promise<AppResult<null>> {
     return ipcRenderer.invoke('git:stage', paths);

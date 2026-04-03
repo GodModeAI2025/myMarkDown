@@ -33,8 +33,8 @@ function tokenizeLine(input: string): string[] {
   return tokens.map((token) => token.replace(/\\ /g, ' '));
 }
 
-function escapeRegex(input: string): string {
-  return input.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+function escapeRegexChar(input: string): string {
+  return /[|\\{}()[\]^$+?.]/.test(input) ? `\\${input}` : input;
 }
 
 function compilePattern(pattern: string): (targetPath: string) => boolean {
@@ -53,19 +53,36 @@ function compilePattern(pattern: string): (targetPath: string) => boolean {
     normalized = normalized.slice(1);
   }
 
-  const escaped = escapeRegex(normalized)
-    .replace(/\\\*\\\*/g, '___DOUBLE_WILDCARD___')
-    .replace(/\\\*/g, '[^/]*')
-    .replace(/___DOUBLE_WILDCARD___/g, '.*')
-    .replace(/\\\?/g, '[^/]');
+  let globRegex = '';
+  for (let index = 0; index < normalized.length; index += 1) {
+    const char = normalized[index];
+
+    if (char === '*') {
+      const next = normalized[index + 1];
+      if (next === '*') {
+        globRegex += '.*';
+        index += 1;
+      } else {
+        globRegex += '[^/]*';
+      }
+      continue;
+    }
+
+    if (char === '?') {
+      globRegex += '[^/]';
+      continue;
+    }
+
+    globRegex += escapeRegexChar(char);
+  }
 
   const prefix = isRootAnchored ? '^' : '^(?:|.*/)';
-  const regex = new RegExp(`${prefix}${escaped}$`);
+  const regex = new RegExp(`${prefix}${globRegex}$`);
 
   return (targetPath: string) => regex.test(toPosixPath(targetPath));
 }
 
-function parseCodeowners(content: string): CodeownersRule[] {
+export function parseCodeowners(content: string): CodeownersRule[] {
   const lines = content.split(/\r?\n/);
   const rules: CodeownersRule[] = [];
 
@@ -101,7 +118,7 @@ function parseCodeowners(content: string): CodeownersRule[] {
   return rules;
 }
 
-function resolveHintForPath(targetPath: string, rules: CodeownersRule[]): CodeOwnerHint {
+export function resolveHintForPath(targetPath: string, rules: CodeownersRule[]): CodeOwnerHint {
   const normalizedPath = toPosixPath(targetPath);
   let matchedRule: CodeownersRule | null = null;
 

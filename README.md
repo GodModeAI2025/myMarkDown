@@ -11,6 +11,8 @@ Git-native desktop Markdown workspace.
 - Incoming remote delta preview with conflict-candidate hints
 - Local markdown full-text search with clickable results
 - Explicit conflict highlighting for merge/rebase conflict status codes
+- App menu + keyboard shortcuts for core actions (Open, Refresh, Save, Commit, Fetch/Pull/Push, Search)
+- Local draft autosave + recovery prompt per repository/file
 - Sidecar comments in `.comments/<escaped-target>.comments.json`
 - CODEOWNERS path hints for changed/active markdown files
 - Policy/auth-aware Git error hints (protected branch, auth, non-fast-forward, conflicts)
@@ -25,6 +27,11 @@ npm run dev
 ## Build
 ```bash
 npm run build
+```
+
+## Main Process Parser Tests
+```bash
+npm run test:main
 ```
 
 ## Notes

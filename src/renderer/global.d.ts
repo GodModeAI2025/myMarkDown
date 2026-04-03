@@ -1,5 +1,6 @@
 import type {
   AppendCommentInput,
+  AppMenuAction,
   AppResult,
   CloseCommentInput,
   CodeOwnerHintsResult,
@@ -36,6 +37,8 @@ declare global {
       createBranch(input: GitCreateBranchInput): Promise<AppResult<string>>;
       checkoutBranch(branchName: string): Promise<AppResult<string>>;
       setUpstream(options: GitRemoteTarget): Promise<AppResult<string>>;
+      pickRepositoryDirectory(): Promise<AppResult<string | null>>;
+      onMenuAction(listener: (action: AppMenuAction) => void): () => void;
       stage(paths: string[]): Promise<AppResult<null>>;
       unstage(paths: string[]): Promise<AppResult<null>>;
       commit(message: string): Promise<AppResult<null>>;

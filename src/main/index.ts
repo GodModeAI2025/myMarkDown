@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain } from 'electron';
+import type { MenuItemConstructorOptions, OpenDialogOptions } from 'electron';
 import {
   checkoutBranch,
   commit,
@@ -30,6 +31,7 @@ import {
 import { canReleaseVersion, releaseVersion } from './releaseService';
 import type {
   AppendCommentInput,
+  AppMenuAction,
   AppError,
   AppResult,
   CloseCommentInput,
@@ -57,6 +59,112 @@ import type {
 } from '../shared/contracts';
 
 const isMac = process.platform === 'darwin';
+let mainWindow: BrowserWindow | null = null;
+
+function emitMenuAction(action: AppMenuAction): void {
+  mainWindow?.webContents.send('app:menuAction', action);
+}
+
+function configureApplicationMenu(): void {
+  const fileMenu: MenuItemConstructorOptions = {
+    label: 'File',
+    submenu: [
+      {
+        label: 'Open Repository...',
+        accelerator: 'CmdOrCtrl+O',
+        click: () => emitMenuAction('open-repository')
+      },
+      { type: 'separator' },
+      {
+        label: 'Refresh Status',
+        accelerator: 'CmdOrCtrl+R',
+        click: () => emitMenuAction('refresh-status')
+      },
+      { type: 'separator' },
+      {
+        label: 'Save File',
+        accelerator: 'CmdOrCtrl+S',
+        click: () => emitMenuAction('save-file')
+      },
+      {
+        label: 'Commit',
+        accelerator: 'CmdOrCtrl+Enter',
+        click: () => emitMenuAction('commit')
+      },
+      { type: 'separator' },
+      {
+        label: 'Fetch',
+        accelerator: 'Shift+CmdOrCtrl+F',
+        click: () => emitMenuAction('fetch')
+      },
+      {
+        label: 'Pull (Rebase)',
+        accelerator: 'Shift+CmdOrCtrl+P',
+        click: () => emitMenuAction('pull')
+      },
+      {
+        label: 'Push',
+        accelerator: 'Shift+CmdOrCtrl+U',
+        click: () => emitMenuAction('push')
+      },
+      {
+        label: 'Incoming Delta',
+        accelerator: 'Alt+CmdOrCtrl+I',
+        click: () => emitMenuAction('incoming-delta')
+      },
+      { type: 'separator' },
+      isMac ? { role: 'close' } : { role: 'quit' }
+    ]
+  };
+
+  const editMenu: MenuItemConstructorOptions = {
+    label: 'Edit',
+    submenu: [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { role: 'selectAll' },
+      { type: 'separator' },
+      {
+        label: 'Find in Markdown',
+        accelerator: 'CmdOrCtrl+F',
+        click: () => emitMenuAction('focus-search')
+      }
+    ]
+  };
+
+  const viewMenu: MenuItemConstructorOptions = {
+    label: 'View',
+    submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }]
+  };
+
+  const menuTemplate: MenuItemConstructorOptions[] = [];
+  if (isMac) {
+    menuTemplate.push({ role: 'appMenu' });
+  }
+
+  menuTemplate.push(fileMenu, editMenu, viewMenu, { role: 'windowMenu' });
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
+}
+
+async function pickRepositoryDirectory(): Promise<string | null> {
+  const dialogOptions: OpenDialogOptions = {
+    title: 'Open Git Repository',
+    properties: ['openDirectory']
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions);
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return result.filePaths[0] ?? null;
+}
 
 function toAppError(error: unknown): AppError {
   if (error instanceof Error) {
@@ -156,6 +264,10 @@ function registerIpcHandlers(): void {
     runMutation(() => push(options))
   );
 
+  ipcMain.handle('app:pickRepositoryDirectory', async (): Promise<AppResult<string | null>> =>
+    runQuery(() => pickRepositoryDirectory())
+  );
+
   ipcMain.handle('repo:listMarkdownFiles', async (): Promise<AppResult<MarkdownFileEntry[]>> =>
     runQuery(() => listMarkdownFiles())
   );
@@ -226,6 +338,13 @@ function createMainWindow(): void {
       nodeIntegration: false
     }
   });
+  mainWindow = win;
+  configureApplicationMenu();
+  win.on('closed', () => {
+    if (mainWindow === win) {
+      mainWindow = null;
+    }
+  });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
@@ -243,6 +362,7 @@ function createMainWindow(): void {
 
 app.whenReady().then(() => {
   registerIpcHandlers();
+  configureApplicationMenu();
   createMainWindow();
 
   app.on('activate', () => {

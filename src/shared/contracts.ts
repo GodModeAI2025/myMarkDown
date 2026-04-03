@@ -53,6 +53,17 @@ export interface GitCreateBranchInput {
   checkout?: boolean;
 }
 
+export type AppMenuAction =
+  | 'open-repository'
+  | 'refresh-status'
+  | 'save-file'
+  | 'commit'
+  | 'fetch'
+  | 'pull'
+  | 'push'
+  | 'incoming-delta'
+  | 'focus-search';
+
 export interface GitIdentity {
   name: string | null;
   email: string | null;

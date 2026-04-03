@@ -13,6 +13,7 @@
     "build:main": "tsc -p tsconfig.node.json",
     "build:renderer": "vite build",
     "build": "npm run clean && npm run build:main && npm run build:renderer",
+    "test:main": "npm run build:main && node --test tests/main/*.test.js",
     "start": "electron .",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.renderer.json --noEmit"
   },

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor as ToastEditor } from '@toast-ui/editor';
 import type {
+  AppMenuAction,
   AppResult,
   CommentThread,
   CodeOwnerHint,
@@ -43,10 +44,17 @@ function uniquePaths(paths: string[]): string[] {
   return [...new Set(paths.map((item) => normalizePath(item)).filter(Boolean))];
 }
 
+function draftStorageKey(repositoryPath: string, targetPath: string): string {
+  return `mymarkdown:draft:${encodeURIComponent(repositoryPath)}:${encodeURIComponent(targetPath)}`;
+}
+
 export default function App(): JSX.Element {
   const editorMountRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<ToastEditor | null>(null);
   const suppressChangeRef = useRef(false);
+  const repoInputRef = useRef<HTMLInputElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const commitInputRef = useRef<HTMLInputElement | null>(null);
 
   const [repoInput, setRepoInput] = useState('');
   const [status, setStatus] = useState<GitStatusResult | null>(null);
@@ -166,6 +174,89 @@ export default function App(): JSX.Element {
       editorRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = window.myMarkdown.onMenuAction((action: AppMenuAction) => {
+      if (busy && action !== 'focus-search') {
+        return;
+      }
+
+      switch (action) {
+        case 'open-repository':
+          void pickRepositoryAndOpen();
+          break;
+        case 'refresh-status':
+          if (isRepoOpen) {
+            void refreshStatus(true);
+          }
+          break;
+        case 'save-file':
+          if (isRepoOpen) {
+            void saveActiveFile();
+          }
+          break;
+        case 'commit':
+          if (isRepoOpen) {
+            if (!commitMessage.trim()) {
+              commitInputRef.current?.focus();
+            }
+            void commitChanges();
+          }
+          break;
+        case 'fetch':
+          if (isRepoOpen) {
+            void fetchRemote();
+          }
+          break;
+        case 'pull':
+          if (isRepoOpen) {
+            void pullRemote();
+          }
+          break;
+        case 'push':
+          if (isRepoOpen) {
+            void pushRemote();
+          }
+          break;
+        case 'incoming-delta':
+          if (isRepoOpen) {
+            void refreshIncomingDelta(true);
+          }
+          break;
+        case 'focus-search':
+          searchInputRef.current?.focus();
+          break;
+        default:
+          break;
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  });
+
+  useEffect(() => {
+    if (!editorDirty || !activeMarkdownPath || !status?.repositoryPath) {
+      return;
+    }
+
+    const key = draftStorageKey(status.repositoryPath, activeMarkdownPath);
+
+    const persistDraft = (): void => {
+      try {
+        localStorage.setItem(key, getEditorMarkdown());
+      } catch {
+        // Ignore local storage errors.
+      }
+    };
+
+    persistDraft();
+    const timer = window.setInterval(persistDraft, 1500);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [activeMarkdownPath, editorDirty, status?.repositoryPath]);
 
   function setEditorMarkdown(content: string): void {
     if (!editorRef.current) {
@@ -356,16 +447,22 @@ export default function App(): JSX.Element {
     await refreshCommentsForPath(activeMarkdownPath);
   }
 
-  async function openRepository(): Promise<void> {
-    if (!repoInput.trim()) {
+  async function openRepository(explicitRepositoryPath?: string): Promise<void> {
+    const targetPath = (explicitRepositoryPath ?? repoInput).trim();
+    if (!targetPath) {
       setNotice({ kind: 'error', text: 'Please enter a repository path.' });
+      repoInputRef.current?.focus();
       return;
+    }
+
+    if (repoInput !== targetPath) {
+      setRepoInput(targetPath);
     }
 
     setBusy(true);
     const opened = await runQuery(
-      () => window.myMarkdown.openRepository(repoInput.trim()),
-      `Repository opened: ${repoInput.trim()}`
+      () => window.myMarkdown.openRepository(targetPath),
+      `Repository opened: ${targetPath}`
     );
 
     if (!opened) {
@@ -373,9 +470,20 @@ export default function App(): JSX.Element {
       return;
     }
 
-    await Promise.all([refreshStatus(false), refreshMarkdownFiles(), refreshIdentity()]);
+    await refreshStatus(false);
+    await Promise.all([refreshMarkdownFiles(), refreshIdentity()]);
     await refreshIncomingDelta(false);
     setBusy(false);
+  }
+
+  async function pickRepositoryAndOpen(): Promise<void> {
+    const picked = await runQuery(() => window.myMarkdown.pickRepositoryDirectory());
+    if (!picked) {
+      return;
+    }
+
+    setRepoInput(picked);
+    await openRepository(picked);
   }
 
   async function showDiff(pathspec: string): Promise<void> {
@@ -618,8 +726,34 @@ export default function App(): JSX.Element {
     setBusy(true);
     const file = await runQuery(() => window.myMarkdown.readMarkdownFile(targetPath));
     if (file) {
+      const draftKey =
+        status?.repositoryPath && file.path ? draftStorageKey(status.repositoryPath, file.path) : null;
+      let resolvedContent = file.content;
+
+      if (draftKey) {
+        try {
+          const draftContent = localStorage.getItem(draftKey);
+          if (draftContent !== null && draftContent !== file.content) {
+            const restoreDraft = window.confirm(
+              `Recovered local draft for ${file.path}. Restore draft content?`
+            );
+            if (restoreDraft) {
+              resolvedContent = draftContent;
+              setEditorDirty(true);
+            } else {
+              localStorage.removeItem(draftKey);
+            }
+          }
+        } catch {
+          // Ignore local storage errors.
+        }
+      }
+
       setActiveMarkdownPath(file.path);
-      setEditorMarkdown(file.content);
+      setEditorMarkdown(resolvedContent);
+      if (resolvedContent !== file.content) {
+        setEditorDirty(true);
+      }
       setReleaseGate(null);
       await refreshCommentsForPath(file.path);
       await refreshCommentSidecarPathForPath(file.path);
@@ -647,6 +781,13 @@ export default function App(): JSX.Element {
 
     if (saveResult) {
       setEditorDirty(false);
+      if (status?.repositoryPath) {
+        try {
+          localStorage.removeItem(draftStorageKey(status.repositoryPath, activeMarkdownPath));
+        } catch {
+          // Ignore local storage errors.
+        }
+      }
       await refreshStatus(false);
       await refreshMarkdownFiles();
     }
@@ -841,11 +982,20 @@ export default function App(): JSX.Element {
 
       <section className="repo-open">
         <input
+          ref={repoInputRef}
           value={repoInput}
           onChange={(event) => setRepoInput(event.target.value)}
           placeholder="/absolute/path/to/repository"
         />
-        <button onClick={openRepository} disabled={busy}>
+        <button onClick={pickRepositoryAndOpen} disabled={busy}>
+          Browse
+        </button>
+        <button
+          onClick={() => {
+            void openRepository();
+          }}
+          disabled={busy}
+        >
           Open Repository
         </button>
         <button onClick={() => refreshStatus(true)} disabled={busy || !isRepoOpen}>
@@ -921,6 +1071,7 @@ export default function App(): JSX.Element {
       <section className="search-panel">
         <div className="search-row">
           <input
+            ref={searchInputRef}
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -1046,6 +1197,7 @@ export default function App(): JSX.Element {
           <div className="commit-box">
             <h3>Create Commit</h3>
             <input
+              ref={commitInputRef}
               value={commitMessage}
               onChange={(event) => setCommitMessage(event.target.value)}
               placeholder="Commit message"

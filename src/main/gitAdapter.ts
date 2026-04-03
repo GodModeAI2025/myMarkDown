@@ -36,7 +36,7 @@ export class GitCommandError extends Error {
   }
 }
 
-function parseBranchLine(line: string): {
+export function parseBranchLine(line: string): {
   branch: string | null;
   trackingBranch: string | null;
   ahead: number;
@@ -80,7 +80,7 @@ function parseBranchLine(line: string): {
   };
 }
 
-function parseStatusEntries(lines: string[]): GitStatusEntry[] {
+export function parseStatusEntries(lines: string[]): GitStatusEntry[] {
   return lines
     .map((line) => line.trimEnd())
     .filter((line) => line.length > 0)
