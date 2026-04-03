@@ -19,6 +19,12 @@ export interface OpenRepositoryResult {
   repositoryPath: string;
 }
 
+export interface RuntimeInfo {
+  gitAvailable: boolean;
+  mode: 'git' | 'demo';
+  repositoryOpen: boolean;
+}
+
 export interface GitStatusEntry {
   path: string;
   indexStatus: string;

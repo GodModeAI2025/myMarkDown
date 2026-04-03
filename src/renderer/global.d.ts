@@ -21,6 +21,7 @@ import type {
   MarkdownSearchResult,
   OpenCommentCountResult,
   OpenRepositoryResult,
+  RuntimeInfo,
   RepositoryState,
   ReleaseGateStatus,
   ReleaseScope,
@@ -33,6 +34,7 @@ declare global {
   interface Window {
     myMarkdown: {
       openRepository(repositoryPath: string): Promise<AppResult<OpenRepositoryResult>>;
+      getRuntimeInfo(): Promise<AppResult<RuntimeInfo>>;
       getStatus(): Promise<AppResult<GitStatusResult>>;
       getDiff(target: GitDiffTarget): Promise<AppResult<string>>;
       getIdentity(): Promise<AppResult<GitIdentity>>;
@@ -42,6 +44,7 @@ declare global {
       checkoutBranch(branchName: string): Promise<AppResult<string>>;
       setUpstream(options: GitRemoteTarget): Promise<AppResult<string>>;
       pickRepositoryDirectory(): Promise<AppResult<string | null>>;
+      openDemoWorkspace(): Promise<AppResult<OpenRepositoryResult>>;
       onMenuAction(listener: (action: AppMenuAction) => void): () => void;
       stage(paths: string[]): Promise<AppResult<null>>;
       unstage(paths: string[]): Promise<AppResult<null>>;

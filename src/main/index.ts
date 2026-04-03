@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { mkdir } from 'node:fs/promises';
 import { app, BrowserWindow, Menu, dialog, ipcMain } from 'electron';
 import type { MenuItemConstructorOptions, OpenDialogOptions } from 'electron';
 import {
@@ -9,7 +10,9 @@ import {
   getDiff,
   getGitIdentity,
   getIncomingDelta,
+  getRuntimeInfo,
   getStatus,
+  openDemoRepository,
   openRepository,
   pull,
   push,
@@ -41,6 +44,7 @@ import type {
   AppendCommentInput,
   AppMenuAction,
   AppError,
+  RuntimeInfo,
   AppResult,
   CloseCommentInput,
   CommentScope,
@@ -198,6 +202,12 @@ async function pickRepositoryDirectory(): Promise<string | null> {
   return result.filePaths[0] ?? null;
 }
 
+async function prepareDemoWorkspacePath(): Promise<string> {
+  const demoRoot = path.join(app.getPath('userData'), 'myMarkDown-demo-workspace');
+  await mkdir(demoRoot, { recursive: true });
+  return demoRoot;
+}
+
 function toAppError(error: unknown): AppError {
   if (error instanceof Error) {
     const candidate = error as Error & {
@@ -258,6 +268,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('git:getIdentity', async (): Promise<AppResult<GitIdentity>> => runQuery(() => getGitIdentity()));
 
+  ipcMain.handle('app:getRuntimeInfo', async (): Promise<AppResult<RuntimeInfo>> => runQuery(() => getRuntimeInfo()));
+
   ipcMain.handle('git:resolveConflict', async (_event, input: GitConflictResolveInput): Promise<AppResult<null>> =>
     runMutation(() => resolveConflict(input))
   );
@@ -302,6 +314,15 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('app:pickRepositoryDirectory', async (): Promise<AppResult<string | null>> =>
     runQuery(() => pickRepositoryDirectory())
+  );
+
+  ipcMain.handle('app:openDemoWorkspace', async (): Promise<AppResult<OpenRepositoryResult>> =>
+    runQuery(async () => {
+      const demoPath = await prepareDemoWorkspacePath();
+      await openDemoRepository(demoPath);
+      await bootstrapProjectStructureIfEmpty();
+      return { repositoryPath: demoPath };
+    })
   );
 
   ipcMain.handle('repo:listMarkdownFiles', async (): Promise<AppResult<MarkdownFileEntry[]>> =>

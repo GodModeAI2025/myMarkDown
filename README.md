@@ -17,6 +17,7 @@ Git-native desktop Markdown workspace.
 - Right context sidebar tabs: comments, heading outline navigation, statistics/analysis insights
 - View menu actions + shortcuts to toggle left/right sidebars (`Alt+CmdOrCtrl+1/2`)
 - First-run onboarding: asks for Git repository + base settings before entering workspace
+- Automatic fallback for systems without Git: start a local demo workspace from onboarding
 - Empty-repo bootstrap: initializes required project structure (markdown + folders) automatically
 - Git-friendly folder placeholders (`.gitkeep`) to represent otherwise-empty directories
 - Conflict resolution actions in-app (`Use Ours` / `Use Theirs`) with direct diff context
@@ -48,6 +49,7 @@ npm run test:main
 
 ## Notes
 - Git remains the authoritative backend.
+- If Git is not installed, the app can run in demo mode with Git actions disabled.
 - Comments are persisted only as sidecar metadata under `.comments/` and not inside final markdown files.
 - If onboarding detects a fully empty repository (no commits, no tracked/untracked files), a starter structure is created.
 - Release action creates an annotated git tag after gate checks (`open_comments == 0` in scope).

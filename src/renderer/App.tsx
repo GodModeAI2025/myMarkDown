@@ -12,6 +12,7 @@ import type {
   IncomingDeltaResult,
   MarkdownFileEntry,
   MarkdownSearchResult,
+  RuntimeInfo,
   ReleaseGateStatus
 } from '../shared/contracts';
 
@@ -41,6 +42,7 @@ type SetupConfig = {
 type MenuRuntimeState = {
   busy: boolean;
   isRepoOpen: boolean;
+  isDemoMode: boolean;
   hasCommitMessage: boolean;
   openRepositoryPicker: () => void;
   refreshStatus: () => void;
@@ -173,6 +175,7 @@ export default function App(): JSX.Element {
   const menuRuntimeRef = useRef<MenuRuntimeState>({
     busy: false,
     isRepoOpen: false,
+    isDemoMode: false,
     hasCommitMessage: false,
     openRepositoryPicker: () => {},
     refreshStatus: () => {},
@@ -187,6 +190,11 @@ export default function App(): JSX.Element {
 
   const [showOnboarding, setShowOnboarding] = useState(() => initialSetupConfig === null);
   const [repoInput, setRepoInput] = useState(initialSetupConfig?.repositoryPath ?? '');
+  const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo>({
+    gitAvailable: true,
+    mode: 'git',
+    repositoryOpen: false
+  });
   const [status, setStatus] = useState<GitStatusResult | null>(null);
   const [selectedChangedPath, setSelectedChangedPath] = useState<string | null>(null);
   const [diff, setDiff] = useState('');
@@ -237,6 +245,7 @@ export default function App(): JSX.Element {
     ? changedFiles.find((entry) => entry.path === selectedChangedPath) ?? null
     : null;
   const selectedIsConflict = selectedChangedEntry ? isConflictEntry(selectedChangedEntry) : false;
+  const isDemoMode = runtimeInfo.mode === 'demo';
   const isRepoOpen = status !== null;
   const tt = (en: string, de: string): string => (locale === 'de' ? de : en);
   const activeCodeownerHint = activeMarkdownPath
@@ -300,6 +309,7 @@ export default function App(): JSX.Element {
   menuRuntimeRef.current = {
     busy,
     isRepoOpen,
+    isDemoMode,
     hasCommitMessage: commitMessage.trim().length > 0,
     openRepositoryPicker: () => {
       void pickRepositoryAndOpen();
@@ -339,6 +349,10 @@ export default function App(): JSX.Element {
 
     void refreshCodeOwnerHintsForPaths([...status.files.map((file) => file.path), activeMarkdownPath]);
   }, [status, activeMarkdownPath]);
+
+  useEffect(() => {
+    void refreshRuntimeInfo();
+  }, []);
 
   useEffect(() => {
     if (!status) {
@@ -382,6 +396,16 @@ export default function App(): JSX.Element {
     localStorage.setItem('mymarkdown:theme', themeMode);
     document.documentElement.dataset.theme = themeMode;
   }, [themeMode]);
+
+  useEffect(() => {
+    if (!isDemoMode) {
+      return;
+    }
+
+    if (controlTab !== 'search') {
+      setControlTab('search');
+    }
+  }, [isDemoMode, controlTab]);
 
   useEffect(() => {
     if (showOnboarding || !status?.repositoryPath) {
@@ -461,7 +485,7 @@ export default function App(): JSX.Element {
           }
           break;
         case 'commit':
-          if (runtime.isRepoOpen) {
+          if (runtime.isRepoOpen && !runtime.isDemoMode) {
             if (!runtime.hasCommitMessage) {
               commitInputRef.current?.focus();
             }
@@ -469,22 +493,22 @@ export default function App(): JSX.Element {
           }
           break;
         case 'fetch':
-          if (runtime.isRepoOpen) {
+          if (runtime.isRepoOpen && !runtime.isDemoMode) {
             runtime.fetchRemote();
           }
           break;
         case 'pull':
-          if (runtime.isRepoOpen) {
+          if (runtime.isRepoOpen && !runtime.isDemoMode) {
             runtime.pullRemote();
           }
           break;
         case 'push':
-          if (runtime.isRepoOpen) {
+          if (runtime.isRepoOpen && !runtime.isDemoMode) {
             runtime.pushRemote();
           }
           break;
         case 'incoming-delta':
-          if (runtime.isRepoOpen) {
+          if (runtime.isRepoOpen && !runtime.isDemoMode) {
             runtime.refreshIncomingDelta();
           }
           break;
@@ -581,6 +605,17 @@ export default function App(): JSX.Element {
     }
 
     setGitIdentity(identity.name || identity.email || 'unknown');
+  }
+
+  async function refreshRuntimeInfo(): Promise<void> {
+    try {
+      const result = await window.myMarkdown.getRuntimeInfo();
+      if (result.ok) {
+        setRuntimeInfo(result.data);
+      }
+    } catch {
+      // Ignore runtime info refresh errors.
+    }
   }
 
   async function refreshCommentsForPath(targetPath: string): Promise<void> {
@@ -784,6 +819,7 @@ export default function App(): JSX.Element {
       return false;
     }
 
+    await refreshRuntimeInfo();
     await refreshStatus(false);
     if (bootstrapIfEmpty) {
       await maybeBootstrapRepositoryIfEmpty();
@@ -845,6 +881,34 @@ export default function App(): JSX.Element {
 
     autoOpenAttemptedRef.current = true;
     setShowOnboarding(false);
+  }
+
+  async function startDemoMode(): Promise<void> {
+    const demoWorkspace = await runQuery(
+      () => window.myMarkdown.openDemoWorkspace(),
+      tt('Demo workspace prepared.', 'Demo-Workspace vorbereitet.')
+    );
+    if (!demoWorkspace) {
+      return;
+    }
+
+    setRepoInput(demoWorkspace.repositoryPath);
+    const opened = await openRepository(demoWorkspace.repositoryPath, {
+      showOpenSuccessNotice: false,
+      bootstrapIfEmpty: false,
+      persistConfig: true
+    });
+
+    if (!opened) {
+      return;
+    }
+
+    autoOpenAttemptedRef.current = true;
+    setShowOnboarding(false);
+    setNotice({
+      kind: 'info',
+      text: tt('Demo mode is active. Git actions are disabled.', 'Demo-Modus ist aktiv. Git-Aktionen sind deaktiviert.')
+    });
   }
 
   async function showDiff(pathspec: string): Promise<void> {
@@ -1503,10 +1567,24 @@ export default function App(): JSX.Element {
           </div>
 
           <div className="onboarding-actions">
+            {!runtimeInfo.gitAvailable ? (
+              <button onClick={startDemoMode} disabled={busy}>
+                {tt('Start Demo Mode', 'Demo-Modus starten')}
+              </button>
+            ) : null}
             <button className="primary" onClick={completeOnboarding} disabled={busy}>
               {tt('Connect Repository', 'Repository verbinden')}
             </button>
           </div>
+
+          {!runtimeInfo.gitAvailable ? (
+            <p className="onboarding-note">
+              {tt(
+                'Git was not detected on this system. You can still use myMarkDown in demo mode.',
+                'Auf diesem System wurde kein Git erkannt. Du kannst myMarkDown trotzdem im Demo-Modus verwenden.'
+              )}
+            </p>
+          ) : null}
         </section>
       </div>
     );
@@ -1520,6 +1598,9 @@ export default function App(): JSX.Element {
           <p className="header-subtitle">myMarkDown</p>
         </div>
         <div className="header-tools">
+          <p className={`mode-pill ${isDemoMode ? 'demo-mode' : ''}`}>
+            {isDemoMode ? tt('Mode: Demo', 'Modus: Demo') : tt('Mode: Git', 'Modus: Git')}
+          </p>
           <p>{tt('Git identity', 'Git-Identität')}: {gitIdentity}</p>
           <div className="toggle-group">
             <button className={showLeftSidebar ? 'toggle-active' : ''} onClick={() => setShowLeftSidebar((value) => !value)}>
@@ -1569,17 +1650,25 @@ export default function App(): JSX.Element {
         <span>
           <strong>CODEOWNERS:</strong> {hasCodeownersFile ? codeownersPath || 'CODEOWNERS' : tt('not found', 'nicht gefunden')}
         </span>
-        <span>
-          <strong>{tt('Incoming', 'Eingehend')}:</strong>{' '}
-          {incomingDelta
-            ? incomingDelta.remoteRef
-              ? `${incomingDelta.incomingCommitCount} ${tt('commit(s)', 'Commit(s)')}, ${incomingDelta.incomingFiles.length} ${tt('file(s)', 'Datei(en)')}`
-              : tt('no tracking branch', 'kein Tracking-Branch')
-            : tt('not checked', 'nicht geprüft')}
-        </span>
-        <span className={conflictFiles.length > 0 ? 'status-conflicts' : ''}>
-          <strong>{tt('Conflicts', 'Konflikte')}:</strong> {conflictFiles.length}
-        </span>
+        {!isDemoMode ? (
+          <span>
+            <strong>{tt('Incoming', 'Eingehend')}:</strong>{' '}
+            {incomingDelta
+              ? incomingDelta.remoteRef
+                ? `${incomingDelta.incomingCommitCount} ${tt('commit(s)', 'Commit(s)')}, ${incomingDelta.incomingFiles.length} ${tt('file(s)', 'Datei(en)')}`
+                : tt('no tracking branch', 'kein Tracking-Branch')
+              : tt('not checked', 'nicht geprüft')}
+          </span>
+        ) : (
+          <span>
+            <strong>{tt('Incoming', 'Eingehend')}:</strong> {tt('not available in demo mode', 'im Demo-Modus nicht verfügbar')}
+          </span>
+        )}
+        {!isDemoMode ? (
+          <span className={conflictFiles.length > 0 ? 'status-conflicts' : ''}>
+            <strong>{tt('Conflicts', 'Konflikte')}:</strong> {conflictFiles.length}
+          </span>
+        ) : null}
       </section>
 
       <section className="settings-section toolbar-strip">
@@ -1619,7 +1708,12 @@ export default function App(): JSX.Element {
 
           <div className="setting-row">
             <span className="setting-label">{tt('Remote', 'Remote')}</span>
-            <input value={remoteInput} onChange={(event) => setRemoteInput(event.target.value)} placeholder={tt('remote', 'remote')} />
+            <input
+              value={remoteInput}
+              onChange={(event) => setRemoteInput(event.target.value)}
+              placeholder={tt('remote', 'remote')}
+              disabled={busy || isDemoMode}
+            />
           </div>
 
           <div className="setting-row">
@@ -1628,6 +1722,7 @@ export default function App(): JSX.Element {
               value={branchInput}
               onChange={(event) => setBranchInput(event.target.value)}
               placeholder={tt('branch (optional)', 'Branch (optional)')}
+              disabled={busy || isDemoMode}
             />
           </div>
         </div>
@@ -1635,20 +1730,24 @@ export default function App(): JSX.Element {
 
       <section className="control-card toolbar-strip">
         <div className="control-tabs">
-          <button
-            className={controlTab === 'sync' ? 'active-tab' : ''}
-            onClick={() => setControlTab('sync')}
-            disabled={busy}
-          >
-            {tt('Sync', 'Sync')}
-          </button>
-          <button
-            className={controlTab === 'branch' ? 'active-tab' : ''}
-            onClick={() => setControlTab('branch')}
-            disabled={busy}
-          >
-            {tt('Branch', 'Branch')}
-          </button>
+          {!isDemoMode ? (
+            <button
+              className={controlTab === 'sync' ? 'active-tab' : ''}
+              onClick={() => setControlTab('sync')}
+              disabled={busy}
+            >
+              {tt('Sync', 'Sync')}
+            </button>
+          ) : null}
+          {!isDemoMode ? (
+            <button
+              className={controlTab === 'branch' ? 'active-tab' : ''}
+              onClick={() => setControlTab('branch')}
+              disabled={busy}
+            >
+              {tt('Branch', 'Branch')}
+            </button>
+          ) : null}
           <button
             className={controlTab === 'search' ? 'active-tab' : ''}
             onClick={() => setControlTab('search')}
@@ -1658,7 +1757,7 @@ export default function App(): JSX.Element {
           </button>
         </div>
 
-        {controlTab === 'sync' ? (
+        {!isDemoMode && controlTab === 'sync' ? (
           <div className="sync-controls">
             <button onClick={fetchRemote} disabled={busy || !isRepoOpen}>
               {tt('Fetch', 'Fetch')}
@@ -1675,7 +1774,7 @@ export default function App(): JSX.Element {
           </div>
         ) : null}
 
-        {controlTab === 'branch' ? (
+        {!isDemoMode && controlTab === 'branch' ? (
           <div className="branch-controls">
             <input
               value={newBranchName}
@@ -1782,103 +1881,109 @@ export default function App(): JSX.Element {
               </ul>
             </div>
 
-            <div className="panel-header">
-              <h3>{tt('Changed Files', 'Geänderte Dateien')}</h3>
-              <div className="file-actions">
-                <button onClick={stageSelected} disabled={busy || !selectedChangedPath}>
-                  {tt('Stage Selected', 'Auswahl stagen')}
-                </button>
-                <button onClick={unstageSelected} disabled={busy || !selectedChangedPath}>
-                  {tt('Unstage Selected', 'Auswahl unstage')}
-                </button>
-                <button onClick={stageAll} disabled={busy || changedFiles.length === 0}>
-                  {tt('Stage All', 'Alle stagen')}
-                </button>
-                <button onClick={unstageAll} disabled={busy || changedFiles.length === 0}>
-                  {tt('Unstage All', 'Alle unstage')}
-                </button>
-              </div>
-            </div>
+            {!isDemoMode ? (
+              <>
+                <div className="panel-header">
+                  <h3>{tt('Changed Files', 'Geänderte Dateien')}</h3>
+                  <div className="file-actions">
+                    <button onClick={stageSelected} disabled={busy || !selectedChangedPath}>
+                      {tt('Stage Selected', 'Auswahl stagen')}
+                    </button>
+                    <button onClick={unstageSelected} disabled={busy || !selectedChangedPath}>
+                      {tt('Unstage Selected', 'Auswahl unstage')}
+                    </button>
+                    <button onClick={stageAll} disabled={busy || changedFiles.length === 0}>
+                      {tt('Stage All', 'Alle stagen')}
+                    </button>
+                    <button onClick={unstageAll} disabled={busy || changedFiles.length === 0}>
+                      {tt('Unstage All', 'Alle unstage')}
+                    </button>
+                  </div>
+                </div>
 
-            <div className="incoming-box">
-              <strong>{tt('Remote Delta', 'Remote-Delta')}</strong>
-              {incomingDelta ? (
-                incomingDelta.remoteRef ? (
-                  <>
+                <div className="incoming-box">
+                  <strong>{tt('Remote Delta', 'Remote-Delta')}</strong>
+                  {incomingDelta ? (
+                    incomingDelta.remoteRef ? (
+                      <>
+                        <p>
+                          {tt('Source', 'Quelle')}: {incomingDelta.remoteRef} | {tt('commits', 'Commits')}:{' '}
+                          {incomingDelta.incomingCommitCount} | {tt('files', 'Dateien')}:{' '}
+                          {incomingDelta.incomingFiles.length}
+                        </p>
+                        <p className={incomingDelta.conflictCandidates.length > 0 ? 'incoming-warning' : ''}>
+                          {tt('Conflict candidates', 'Konfliktkandidaten')}:{' '}
+                          {incomingDelta.conflictCandidates.length > 0
+                            ? incomingDelta.conflictCandidates.join(', ')
+                            : tt('none', 'keine')}
+                        </p>
+                      </>
+                    ) : (
+                      <p>{tt('No tracking branch configured.', 'Kein Tracking-Branch konfiguriert.')}</p>
+                    )
+                  ) : (
                     <p>
-                      {tt('Source', 'Quelle')}: {incomingDelta.remoteRef} | {tt('commits', 'Commits')}:{' '}
-                      {incomingDelta.incomingCommitCount} | {tt('files', 'Dateien')}:{' '}
-                      {incomingDelta.incomingFiles.length}
+                      {tt(
+                        'Run fetch or Incoming Delta to inspect remote changes.',
+                        'Führe Fetch oder Eingehende Deltas aus, um Remote-Änderungen zu sehen.'
+                      )}
                     </p>
-                    <p className={incomingDelta.conflictCandidates.length > 0 ? 'incoming-warning' : ''}>
-                      {tt('Conflict candidates', 'Konfliktkandidaten')}:{' '}
-                      {incomingDelta.conflictCandidates.length > 0
-                        ? incomingDelta.conflictCandidates.join(', ')
-                        : tt('none', 'keine')}
-                    </p>
-                  </>
-                ) : (
-                  <p>{tt('No tracking branch configured.', 'Kein Tracking-Branch konfiguriert.')}</p>
-                )
-              ) : (
-                <p>
-                  {tt(
-                    'Run fetch or Incoming Delta to inspect remote changes.',
-                    'Führe Fetch oder Eingehende Deltas aus, um Remote-Änderungen zu sehen.'
                   )}
-                </p>
-              )}
-            </div>
+                </div>
 
-            {changedFiles.length === 0 ? (
-              <p className="muted">{tt('No changes.', 'Keine Änderungen.')}</p>
-            ) : (
-              <ul>
-                {changedFiles.map((file) => {
-                  const hint = codeownerHintsByPath[normalizePath(file.path)];
-                  const hasOwners = Boolean(hint && hint.owners.length > 0);
+                {changedFiles.length === 0 ? (
+                  <p className="muted">{tt('No changes.', 'Keine Änderungen.')}</p>
+                ) : (
+                  <ul>
+                    {changedFiles.map((file) => {
+                      const hint = codeownerHintsByPath[normalizePath(file.path)];
+                      const hasOwners = Boolean(hint && hint.owners.length > 0);
 
-                  return (
-                    <li key={`${file.path}-${file.indexStatus}-${file.workTreeStatus}`}>
-                      <button
-                        className={`${selectedChangedPath === file.path ? 'selected' : ''} ${
-                          isConflictEntry(file) ? 'selected-conflict' : ''
-                        }`.trim()}
-                        onClick={() => showDiff(file.path)}
-                      >
-                        <span className="status-pill">{statusLabel(file)}</span>
-                        <span className="path">{file.path}</span>
-                        {isConflictEntry(file) ? <span className="conflict-pill">{tt('CONFLICT', 'KONFLIKT')}</span> : null}
-                        {hasOwners ? (
-                          <span
-                            className="owner-pill"
-                            title={hint?.matchedPattern ? `CODEOWNERS pattern: ${hint.matchedPattern}` : 'CODEOWNERS'}
+                      return (
+                        <li key={`${file.path}-${file.indexStatus}-${file.workTreeStatus}`}>
+                          <button
+                            className={`${selectedChangedPath === file.path ? 'selected' : ''} ${
+                              isConflictEntry(file) ? 'selected-conflict' : ''
+                            }`.trim()}
+                            onClick={() => showDiff(file.path)}
                           >
-                            {hint?.owners.join(', ')}
-                          </span>
-                        ) : hasCodeownersFile ? (
-                          <span className="owner-pill owner-pill-none">{tt('unowned', 'ohne Owner')}</span>
-                        ) : null}
-                        {file.originalPath ? <span className="rename">(from {file.originalPath})</span> : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+                            <span className="status-pill">{statusLabel(file)}</span>
+                            <span className="path">{file.path}</span>
+                            {isConflictEntry(file) ? <span className="conflict-pill">{tt('CONFLICT', 'KONFLIKT')}</span> : null}
+                            {hasOwners ? (
+                              <span
+                                className="owner-pill"
+                                title={hint?.matchedPattern ? `CODEOWNERS pattern: ${hint.matchedPattern}` : 'CODEOWNERS'}
+                              >
+                                {hint?.owners.join(', ')}
+                              </span>
+                            ) : hasCodeownersFile ? (
+                              <span className="owner-pill owner-pill-none">{tt('unowned', 'ohne Owner')}</span>
+                            ) : null}
+                            {file.originalPath ? <span className="rename">(from {file.originalPath})</span> : null}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
 
-            <div className="commit-box">
-              <h3>{tt('Create Commit', 'Commit erstellen')}</h3>
-              <input
-                ref={commitInputRef}
-                value={commitMessage}
-                onChange={(event) => setCommitMessage(event.target.value)}
-                placeholder={tt('Commit message', 'Commit-Nachricht')}
-              />
-              <button className="primary" onClick={commitChanges} disabled={busy || !isRepoOpen}>
-                {tt('Commit', 'Commit')}
-              </button>
-            </div>
+                <div className="commit-box">
+                  <h3>{tt('Create Commit', 'Commit erstellen')}</h3>
+                  <input
+                    ref={commitInputRef}
+                    value={commitMessage}
+                    onChange={(event) => setCommitMessage(event.target.value)}
+                    placeholder={tt('Commit message', 'Commit-Nachricht')}
+                  />
+                  <button className="primary" onClick={commitChanges} disabled={busy || !isRepoOpen}>
+                    {tt('Commit', 'Commit')}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="muted">{tt('Demo mode: Git workflow panel is disabled.', 'Demo-Modus: Git-Workflow ist deaktiviert.')}</p>
+            )}
           </aside>
         ) : null}
 

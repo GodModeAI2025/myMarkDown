@@ -1,4 +1,4 @@
-import { access } from 'node:fs/promises';
+import { access, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -11,12 +11,17 @@ import type {
   GitStatusEntry,
   GitStatusResult,
   IncomingDeltaResult,
+  RuntimeInfo,
   RepositoryState
 } from '../shared/contracts';
 
 const execFileAsync = promisify(execFile);
 
 let currentRepositoryPath: string | null = null;
+let currentRuntimeMode: RuntimeInfo['mode'] = 'git';
+let gitBinaryAvailableCache: boolean | null = null;
+
+const IGNORED_DEMO_DIRS = new Set(['.git', 'node_modules', 'dist']);
 
 type GitFailure = {
   code: string;
@@ -119,6 +124,63 @@ export function parseStatusEntries(lines: string[]): GitStatusEntry[] {
 
 function uniquePaths(paths: string[]): string[] {
   return [...new Set(paths.map((item) => item.trim()).filter((item) => item.length > 0))];
+}
+
+async function isGitBinaryAvailable(): Promise<boolean> {
+  if (gitBinaryAvailableCache !== null) {
+    return gitBinaryAvailableCache;
+  }
+
+  try {
+    await execFileAsync('git', ['--version'], {
+      maxBuffer: 256 * 1024,
+      encoding: 'utf8'
+    });
+    gitBinaryAvailableCache = true;
+    return true;
+  } catch {
+    gitBinaryAvailableCache = false;
+    return false;
+  }
+}
+
+function ensureGitMode(action: string): void {
+  if (currentRuntimeMode === 'demo') {
+    throw new GitCommandError({
+      code: 'DEMO_MODE_GIT_UNAVAILABLE',
+      message: `Git action "${action}" is unavailable in demo mode.`,
+      hint: 'Installiere Git und öffne ein echtes Git-Repository für diesen Workflow.'
+    });
+  }
+}
+
+async function countWorkspaceFiles(rootDir: string, currentDir: string): Promise<number> {
+  const entries = await readdir(currentDir, { withFileTypes: true });
+  let count = 0;
+
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (IGNORED_DEMO_DIRS.has(entry.name)) {
+        continue;
+      }
+
+      count += await countWorkspaceFiles(rootDir, path.join(currentDir, entry.name));
+      continue;
+    }
+
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    const absolutePath = path.join(currentDir, entry.name);
+    if (!absolutePath.startsWith(rootDir)) {
+      continue;
+    }
+
+    count += 1;
+  }
+
+  return count;
 }
 
 export function deriveRepositoryState(input: {
@@ -237,6 +299,15 @@ async function runGit(repoPath: string, args: string[]): Promise<string> {
       stderr?: string;
     };
 
+    if (gitError.code === 'ENOENT') {
+      gitBinaryAvailableCache = false;
+      throw new GitCommandError({
+        code: 'GIT_NOT_INSTALLED',
+        message: 'Git binary was not found on this system.',
+        hint: 'Installiere Git, oder starte den Demo-Modus ohne Git.'
+      });
+    }
+
     const raw = [gitError.stdout, gitError.stderr, gitError.message]
       .filter((chunk): chunk is string => typeof chunk === 'string' && chunk.trim().length > 0)
       .join('\n')
@@ -258,15 +329,40 @@ export function getOpenRepositoryPath(): string {
   return currentRepositoryPath;
 }
 
+export async function getRuntimeInfo(): Promise<RuntimeInfo> {
+  return {
+    gitAvailable: await isGitBinaryAvailable(),
+    mode: currentRuntimeMode,
+    repositoryOpen: currentRepositoryPath !== null
+  };
+}
+
 export async function openRepository(repositoryPath: string): Promise<string> {
   const resolvedPath = path.resolve(repositoryPath);
   await access(resolvedPath, constants.R_OK | constants.W_OK);
+
+  const gitAvailable = await isGitBinaryAvailable();
+  if (!gitAvailable) {
+    currentRepositoryPath = resolvedPath;
+    currentRuntimeMode = 'demo';
+    return resolvedPath;
+  }
 
   await runGit(resolvedPath, ['rev-parse', '--is-inside-work-tree']);
   const topLevel = (await runGit(resolvedPath, ['rev-parse', '--show-toplevel'])).trim();
 
   currentRepositoryPath = topLevel;
+  currentRuntimeMode = 'git';
   return topLevel;
+}
+
+export async function openDemoRepository(repositoryPath: string): Promise<string> {
+  const resolvedPath = path.resolve(repositoryPath);
+  await access(resolvedPath, constants.R_OK | constants.W_OK);
+
+  currentRepositoryPath = resolvedPath;
+  currentRuntimeMode = 'demo';
+  return resolvedPath;
 }
 
 async function hasHeadCommit(repositoryPath: string): Promise<boolean> {
@@ -280,6 +376,17 @@ async function hasHeadCommit(repositoryPath: string): Promise<boolean> {
 
 export async function inspectRepositoryState(): Promise<RepositoryState> {
   const repositoryPath = getOpenRepositoryPath();
+  if (currentRuntimeMode === 'demo') {
+    const fileCount = await countWorkspaceFiles(repositoryPath, repositoryPath);
+    return {
+      repositoryPath,
+      hasCommits: false,
+      trackedFileCount: fileCount,
+      untrackedFileCount: 0,
+      isEmpty: fileCount === 0
+    };
+  }
+
   const [trackedRaw, statusRaw, hasCommits] = await Promise.all([
     runGit(repositoryPath, ['ls-files']),
     runGit(repositoryPath, ['status', '--porcelain']),
@@ -296,6 +403,18 @@ export async function inspectRepositoryState(): Promise<RepositoryState> {
 
 export async function getStatus(): Promise<GitStatusResult> {
   const repositoryPath = getOpenRepositoryPath();
+  if (currentRuntimeMode === 'demo') {
+    return {
+      repositoryPath,
+      branch: 'demo',
+      trackingBranch: null,
+      ahead: 0,
+      behind: 0,
+      isClean: true,
+      files: []
+    };
+  }
+
   const stdout = await runGit(repositoryPath, ['status', '--porcelain', '-b']);
   const lines = stdout.split('\n').filter((line) => line.length > 0);
 
@@ -316,6 +435,14 @@ export async function getStatus(): Promise<GitStatusResult> {
 }
 
 export async function getDiff(target: GitDiffTarget = {}): Promise<string> {
+  if (currentRuntimeMode === 'demo') {
+    if (target.pathspec) {
+      return `Demo mode: Git diff is unavailable for ${target.pathspec}.`;
+    }
+
+    return 'Demo mode: Git diff is unavailable without Git.';
+  }
+
   const repositoryPath = getOpenRepositoryPath();
   const args = ['diff', '--no-color'];
 
@@ -344,6 +471,7 @@ function ensureBranchName(input: string): string {
 }
 
 export async function createBranch(input: GitCreateBranchInput): Promise<string> {
+  ensureGitMode('create-branch');
   const repositoryPath = getOpenRepositoryPath();
   const branchName = ensureBranchName(input.name);
   const fromRef = input.from?.trim() || 'HEAD';
@@ -359,6 +487,7 @@ export async function createBranch(input: GitCreateBranchInput): Promise<string>
 }
 
 export async function checkoutBranch(branch: string): Promise<string> {
+  ensureGitMode('checkout-branch');
   const repositoryPath = getOpenRepositoryPath();
   const branchName = ensureBranchName(branch);
   await runGit(repositoryPath, ['checkout', branchName]);
@@ -366,6 +495,7 @@ export async function checkoutBranch(branch: string): Promise<string> {
 }
 
 export async function stage(paths: string[]): Promise<void> {
+  ensureGitMode('stage');
   const repositoryPath = getOpenRepositoryPath();
   if (paths.length === 0) {
     return;
@@ -375,6 +505,7 @@ export async function stage(paths: string[]): Promise<void> {
 }
 
 export async function unstage(paths: string[]): Promise<void> {
+  ensureGitMode('unstage');
   const repositoryPath = getOpenRepositoryPath();
   if (paths.length === 0) {
     return;
@@ -384,6 +515,7 @@ export async function unstage(paths: string[]): Promise<void> {
 }
 
 export async function commit(message: string): Promise<void> {
+  ensureGitMode('commit');
   const repositoryPath = getOpenRepositoryPath();
   const commitMessage = message.trim();
 
@@ -395,6 +527,7 @@ export async function commit(message: string): Promise<void> {
 }
 
 export async function fetch(options: GitRemoteTarget = {}): Promise<void> {
+  ensureGitMode('fetch');
   const repositoryPath = getOpenRepositoryPath();
   const args = ['fetch', options.remote || 'origin'];
 
@@ -406,6 +539,7 @@ export async function fetch(options: GitRemoteTarget = {}): Promise<void> {
 }
 
 export async function pull(options: GitRemoteTarget = {}): Promise<void> {
+  ensureGitMode('pull');
   const repositoryPath = getOpenRepositoryPath();
   const args = ['pull', '--rebase', options.remote || 'origin'];
 
@@ -417,6 +551,7 @@ export async function pull(options: GitRemoteTarget = {}): Promise<void> {
 }
 
 export async function push(options: GitRemoteTarget = {}): Promise<void> {
+  ensureGitMode('push');
   const repositoryPath = getOpenRepositoryPath();
   const args = ['push', options.remote || 'origin'];
 
@@ -428,6 +563,7 @@ export async function push(options: GitRemoteTarget = {}): Promise<void> {
 }
 
 export async function resolveConflict(input: GitConflictResolveInput): Promise<void> {
+  ensureGitMode('resolve-conflict');
   const repositoryPath = getOpenRepositoryPath();
   const pathspec = input.path.trim();
   if (!pathspec) {
@@ -440,6 +576,7 @@ export async function resolveConflict(input: GitConflictResolveInput): Promise<v
 }
 
 export async function setUpstream(options: GitRemoteTarget = {}): Promise<string> {
+  ensureGitMode('set-upstream');
   const repositoryPath = getOpenRepositoryPath();
   const remote = options.remote?.trim() || 'origin';
   const status = await getStatus();
@@ -449,6 +586,10 @@ export async function setUpstream(options: GitRemoteTarget = {}): Promise<string
 }
 
 export async function getGitIdentity(): Promise<{ name: string | null; email: string | null }> {
+  if (currentRuntimeMode === 'demo') {
+    return { name: 'demo-user', email: null };
+  }
+
   const repositoryPath = getOpenRepositoryPath();
 
   const safeGetConfig = async (key: string): Promise<string | null> => {
@@ -465,6 +606,16 @@ export async function getGitIdentity(): Promise<{ name: string | null; email: st
 }
 
 export async function getIncomingDelta(options: GitRemoteTarget = {}): Promise<IncomingDeltaResult> {
+  if (currentRuntimeMode === 'demo') {
+    return {
+      baseRef: 'demo',
+      remoteRef: null,
+      incomingCommitCount: 0,
+      incomingFiles: [],
+      conflictCandidates: []
+    };
+  }
+
   const repositoryPath = getOpenRepositoryPath();
   const status = await getStatus();
 
@@ -520,6 +671,7 @@ export async function getIncomingDelta(options: GitRemoteTarget = {}): Promise<I
 }
 
 export async function ensureWorkingTreeClean(): Promise<void> {
+  ensureGitMode('ensure-working-tree-clean');
   const repositoryPath = getOpenRepositoryPath();
   const porcelain = (await runGit(repositoryPath, ['status', '--porcelain'])).trim();
   if (porcelain.length > 0) {
@@ -528,6 +680,7 @@ export async function ensureWorkingTreeClean(): Promise<void> {
 }
 
 export async function createAnnotatedTag(tag: string, targetRef: string, message: string): Promise<void> {
+  ensureGitMode('create-annotated-tag');
   const repositoryPath = getOpenRepositoryPath();
   const trimmedTag = tag.trim();
   if (!trimmedTag) {
@@ -538,6 +691,7 @@ export async function createAnnotatedTag(tag: string, targetRef: string, message
 }
 
 export async function pushTag(tag: string, remote = 'origin'): Promise<void> {
+  ensureGitMode('push-tag');
   const repositoryPath = getOpenRepositoryPath();
   await runGit(repositoryPath, ['push', remote, tag]);
 }

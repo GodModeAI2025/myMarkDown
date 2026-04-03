@@ -22,6 +22,7 @@ import type {
   MarkdownSearchResult,
   OpenCommentCountResult,
   OpenRepositoryResult,
+  RuntimeInfo,
   RepositoryState,
   ReleaseGateStatus,
   ReleaseScope,
@@ -33,6 +34,9 @@ import type {
 const api = {
   openRepository(repositoryPath: string): Promise<AppResult<OpenRepositoryResult>> {
     return ipcRenderer.invoke('git:openRepository', repositoryPath);
+  },
+  getRuntimeInfo(): Promise<AppResult<RuntimeInfo>> {
+    return ipcRenderer.invoke('app:getRuntimeInfo');
   },
   getStatus(): Promise<AppResult<GitStatusResult>> {
     return ipcRenderer.invoke('git:getStatus');
@@ -60,6 +64,9 @@ const api = {
   },
   pickRepositoryDirectory(): Promise<AppResult<string | null>> {
     return ipcRenderer.invoke('app:pickRepositoryDirectory');
+  },
+  openDemoWorkspace(): Promise<AppResult<OpenRepositoryResult>> {
+    return ipcRenderer.invoke('app:openDemoWorkspace');
   },
   onMenuAction(listener: (action: AppMenuAction) => void): () => void {
     const channel = 'app:menuAction';

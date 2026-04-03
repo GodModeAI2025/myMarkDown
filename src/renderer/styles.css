@@ -151,6 +151,13 @@ textarea {
 .onboarding-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+}
+
+.onboarding-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.84rem;
 }
 
 .toolbar-strip {
@@ -206,6 +213,15 @@ textarea {
   border-radius: 999px;
   background: var(--surface-subtle);
   padding: 5px 10px;
+}
+
+.mode-pill {
+  font-weight: 600;
+}
+
+.mode-pill.demo-mode {
+  border-color: rgba(10, 132, 255, 0.42);
+  background: rgba(10, 132, 255, 0.16);
 }
 
 .toggle-group {
