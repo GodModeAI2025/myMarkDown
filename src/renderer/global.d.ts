@@ -3,6 +3,8 @@ import type {
   AppMenuAction,
   AppResult,
   BootstrapProjectResult,
+  ConnectRepositoryInput,
+  ConnectRepositoryResult,
   CloseCommentInput,
   CodeOwnerHintsResult,
   CommentScope,
@@ -33,6 +35,7 @@ import type {
 declare global {
   interface Window {
     myMarkdown: {
+      connectRepository(input: ConnectRepositoryInput): Promise<AppResult<ConnectRepositoryResult>>;
       openRepository(repositoryPath: string): Promise<AppResult<OpenRepositoryResult>>;
       getRuntimeInfo(): Promise<AppResult<RuntimeInfo>>;
       getStatus(): Promise<AppResult<GitStatusResult>>;

@@ -1,9 +1,11 @@
-import { access, readdir } from 'node:fs/promises';
+import { access, mkdir, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type {
+  ConnectRepositoryInput,
+  ConnectRepositoryResult,
   GitConflictResolveInput,
   GitCreateBranchInput,
   GitDiffTarget,
@@ -28,6 +30,8 @@ type GitFailure = {
   message: string;
   hint?: string;
 };
+
+const DEFAULT_REMOTE_NAME = 'origin';
 
 export class GitCommandError extends Error {
   code: string;
@@ -126,6 +130,78 @@ function uniquePaths(paths: string[]): string[] {
   return [...new Set(paths.map((item) => item.trim()).filter((item) => item.length > 0))];
 }
 
+function normalizeRemoteName(input?: string): string {
+  return input?.trim() || DEFAULT_REMOTE_NAME;
+}
+
+function normalizeBranchName(input?: string): string | null {
+  const value = input?.trim() || '';
+  return value.length > 0 ? value : null;
+}
+
+function sanitizeCredentialString(value: string): string {
+  return value
+    .replace(/(https?:\/\/[^:@\s]+:)([^@\s/]+)@/gi, '$1***@')
+    .replace(/(oauth2:)([^@\s/]+)@/gi, '$1***@');
+}
+
+function sanitizeGitArgs(args: string[]): string[] {
+  return args.map((arg) => sanitizeCredentialString(arg));
+}
+
+function ensureHttpsRemoteUrl(remoteUrl: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(remoteUrl);
+  } catch {
+    throw new GitCommandError({
+      code: 'GIT_REMOTE_URL_INVALID',
+      message: 'Remote URL is invalid.',
+      hint: 'Bitte eine gültige Remote-URL eingeben (z. B. https://...).'
+    });
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new GitCommandError({
+      code: 'GIT_REMOTE_URL_PROTOCOL_UNSUPPORTED',
+      message: 'Token authentication requires an HTTPS remote URL.',
+      hint: 'Nutze für Token-Login eine https:// Remote-URL.'
+    });
+  }
+
+  return parsed;
+}
+
+function buildAuthRemoteUrl(remoteUrl: string, inputAuth?: ConnectRepositoryInput['auth']): string {
+  const normalizedRemoteUrl = remoteUrl.trim();
+  if (!normalizedRemoteUrl) {
+    throw new GitCommandError({
+      code: 'GIT_REMOTE_URL_REQUIRED',
+      message: 'Remote URL is required.',
+      hint: 'Bitte eine Remote-URL angeben.'
+    });
+  }
+
+  const authMode = inputAuth?.mode ?? 'system';
+  if (authMode !== 'https-token') {
+    return normalizedRemoteUrl;
+  }
+
+  const token = inputAuth?.token?.trim() || '';
+  if (!token) {
+    throw new GitCommandError({
+      code: 'GIT_AUTH_TOKEN_REQUIRED',
+      message: 'Token authentication was selected but no token was provided.',
+      hint: 'Bitte ein Personal Access Token eingeben.'
+    });
+  }
+
+  const parsed = ensureHttpsRemoteUrl(normalizedRemoteUrl);
+  parsed.username = inputAuth?.username?.trim() || 'git';
+  parsed.password = token;
+  return parsed.toString();
+}
+
 async function isGitBinaryAvailable(): Promise<boolean> {
   if (gitBinaryAvailableCache !== null) {
     return gitBinaryAvailableCache;
@@ -181,6 +257,55 @@ async function countWorkspaceFiles(rootDir: string, currentDir: string): Promise
   }
 
   return count;
+}
+
+async function isDirectoryEmpty(directoryPath: string): Promise<boolean> {
+  try {
+    const entries = await readdir(directoryPath);
+    return entries.length === 0;
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'ENOENT') {
+      return true;
+    }
+    throw error;
+  }
+}
+
+async function isGitRepositoryDirectory(directoryPath: string): Promise<boolean> {
+  try {
+    await runGit(directoryPath, ['rev-parse', '--is-inside-work-tree']);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function remoteExists(repositoryPath: string, remoteName: string): Promise<boolean> {
+  try {
+    await runGit(repositoryPath, ['remote', 'get-url', remoteName]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function setOrAddRemote(repositoryPath: string, remoteName: string, remoteUrl: string): Promise<void> {
+  if (await remoteExists(repositoryPath, remoteName)) {
+    await runGit(repositoryPath, ['remote', 'set-url', remoteName, remoteUrl]);
+    return;
+  }
+
+  await runGit(repositoryPath, ['remote', 'add', remoteName, remoteUrl]);
+}
+
+async function verifyRemoteAuthentication(
+  repositoryPath: string,
+  remoteUrl: string,
+  auth?: ConnectRepositoryInput['auth']
+): Promise<void> {
+  const authUrl = buildAuthRemoteUrl(remoteUrl, auth);
+  await runGit(repositoryPath, ['ls-remote', '--heads', '--tags', authUrl]);
 }
 
 export function deriveRepositoryState(input: {
@@ -308,12 +433,14 @@ async function runGit(repoPath: string, args: string[]): Promise<string> {
       });
     }
 
-    const raw = [gitError.stdout, gitError.stderr, gitError.message]
+    const raw = sanitizeCredentialString(
+      [gitError.stdout, gitError.stderr, gitError.message]
       .filter((chunk): chunk is string => typeof chunk === 'string' && chunk.trim().length > 0)
       .join('\n')
-      .trim();
+      .trim()
+    );
 
-    const classified = classifyGitFailure(raw, args);
+    const classified = classifyGitFailure(raw, sanitizeGitArgs(args));
     throw new GitCommandError({
       ...classified,
       raw
@@ -363,6 +490,97 @@ export async function openDemoRepository(repositoryPath: string): Promise<string
   currentRepositoryPath = resolvedPath;
   currentRuntimeMode = 'demo';
   return resolvedPath;
+}
+
+export async function connectRepository(input: ConnectRepositoryInput): Promise<ConnectRepositoryResult> {
+  const localPath = path.resolve(input.localPath.trim());
+  if (!input.localPath.trim()) {
+    throw new GitCommandError({
+      code: 'REPOSITORY_PATH_REQUIRED',
+      message: 'Local repository path is required.',
+      hint: 'Bitte einen lokalen Ordner für das Repository auswählen.'
+    });
+  }
+
+  const remoteUrl = input.remoteUrl?.trim() || '';
+  const remoteName = normalizeRemoteName(input.remoteName);
+  const defaultBranch = normalizeBranchName(input.defaultBranch);
+  const gitAvailable = await isGitBinaryAvailable();
+
+  if (!gitAvailable) {
+    if (remoteUrl) {
+      throw new GitCommandError({
+        code: 'GIT_NOT_INSTALLED',
+        message: 'Git is required for remote authentication and remote repository access.',
+        hint: 'Installiere Git oder starte ohne Remote im Demo-Modus.'
+      });
+    }
+
+    await mkdir(localPath, { recursive: true });
+    const repositoryPath = await openDemoRepository(localPath);
+    return {
+      repositoryPath,
+      mode: 'demo',
+      remoteConfigured: false,
+      clonedFromRemote: false,
+      initializedRepository: false,
+      authVerified: false
+    };
+  }
+
+  await mkdir(localPath, { recursive: true });
+
+  let repositoryPath = '';
+  let clonedFromRemote = false;
+  let initializedRepository = false;
+  let remoteConfigured = false;
+  let authVerified = false;
+
+  const isGitRepo = await isGitRepositoryDirectory(localPath);
+  if (isGitRepo) {
+    repositoryPath = await openRepository(localPath);
+  } else if (remoteUrl) {
+    const isEmptyDirectory = await isDirectoryEmpty(localPath);
+    if (!isEmptyDirectory) {
+      throw new GitCommandError({
+        code: 'REPOSITORY_TARGET_NOT_EMPTY',
+        message: 'The selected local folder is not empty and cannot be used for cloning.',
+        hint: 'Wähle einen leeren Zielordner oder ein bereits vorhandenes Git-Repository.'
+      });
+    }
+
+    const authUrl = buildAuthRemoteUrl(remoteUrl, input.auth);
+    const parentPath = path.dirname(localPath);
+    const folderName = path.basename(localPath);
+    await runGit(parentPath, ['clone', authUrl, folderName]);
+    repositoryPath = await openRepository(localPath);
+    clonedFromRemote = true;
+  } else {
+    await runGit(localPath, ['init']);
+    if (defaultBranch) {
+      await runGit(localPath, ['check-ref-format', '--branch', defaultBranch]);
+      await runGit(localPath, ['symbolic-ref', 'HEAD', `refs/heads/${defaultBranch}`]);
+    }
+
+    repositoryPath = await openRepository(localPath);
+    initializedRepository = true;
+  }
+
+  if (remoteUrl) {
+    await setOrAddRemote(repositoryPath, remoteName, remoteUrl);
+    await verifyRemoteAuthentication(repositoryPath, remoteUrl, input.auth);
+    remoteConfigured = true;
+    authVerified = true;
+  }
+
+  return {
+    repositoryPath,
+    mode: 'git',
+    remoteConfigured,
+    clonedFromRemote,
+    initializedRepository,
+    authVerified
+  };
 }
 
 async function hasHeadCommit(repositoryPath: string): Promise<boolean> {

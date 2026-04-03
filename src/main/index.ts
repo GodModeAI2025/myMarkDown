@@ -4,6 +4,7 @@ import { app, BrowserWindow, Menu, dialog, ipcMain } from 'electron';
 import type { MenuItemConstructorOptions, OpenDialogOptions } from 'electron';
 import {
   checkoutBranch,
+  connectRepository,
   commit,
   createBranch,
   fetch,
@@ -46,6 +47,8 @@ import type {
   AppError,
   RuntimeInfo,
   AppResult,
+  ConnectRepositoryInput,
+  ConnectRepositoryResult,
   CloseCommentInput,
   CommentScope,
   CommentThread,
@@ -256,6 +259,10 @@ async function runQuery<T>(query: () => Promise<T>): Promise<AppResult<T>> {
 }
 
 function registerIpcHandlers(): void {
+  ipcMain.handle('repo:connect', async (_event, input: ConnectRepositoryInput): Promise<AppResult<ConnectRepositoryResult>> =>
+    runQuery(() => connectRepository(input))
+  );
+
   ipcMain.handle('git:openRepository', async (_event, repositoryPath: string): Promise<AppResult<OpenRepositoryResult>> =>
     runQuery(async () => ({ repositoryPath: await openRepository(repositoryPath) }))
   );

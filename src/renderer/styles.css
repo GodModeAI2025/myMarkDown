@@ -148,6 +148,10 @@ textarea {
   font-size: 0.86rem;
 }
 
+.onboarding-hint p + p {
+  margin-top: 8px;
+}
+
 .onboarding-actions {
   display: flex;
   justify-content: flex-end;

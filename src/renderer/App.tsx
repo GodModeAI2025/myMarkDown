@@ -12,6 +12,7 @@ import type {
   IncomingDeltaResult,
   MarkdownFileEntry,
   MarkdownSearchResult,
+  RemoteAuthMode,
   RuntimeInfo,
   ReleaseGateStatus
 } from '../shared/contracts';
@@ -36,6 +37,8 @@ type SetupConfig = {
   repositoryPath: string;
   remote: string;
   defaultBranch: string;
+  remoteUrl?: string;
+  authMode?: RemoteAuthMode;
   configuredAt: string;
 };
 
@@ -149,6 +152,8 @@ function loadSetupConfig(): SetupConfig | null {
       repositoryPath,
       remote,
       defaultBranch,
+      remoteUrl: typeof parsed.remoteUrl === 'string' ? parsed.remoteUrl.trim() : undefined,
+      authMode: parsed.authMode === 'https-token' ? 'https-token' : 'system',
       configuredAt: typeof parsed.configuredAt === 'string' ? parsed.configuredAt : new Date().toISOString()
     };
   } catch {
@@ -190,6 +195,10 @@ export default function App(): JSX.Element {
 
   const [showOnboarding, setShowOnboarding] = useState(() => initialSetupConfig === null);
   const [repoInput, setRepoInput] = useState(initialSetupConfig?.repositoryPath ?? '');
+  const [onboardingRemoteUrl, setOnboardingRemoteUrl] = useState(initialSetupConfig?.remoteUrl ?? '');
+  const [onboardingAuthMode, setOnboardingAuthMode] = useState<RemoteAuthMode>(initialSetupConfig?.authMode ?? 'system');
+  const [onboardingRemoteUsername, setOnboardingRemoteUsername] = useState('');
+  const [onboardingRemoteToken, setOnboardingRemoteToken] = useState('');
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo>({
     gitAvailable: true,
     mode: 'git',
@@ -416,9 +425,11 @@ export default function App(): JSX.Element {
       repositoryPath: status.repositoryPath,
       remote: remoteInput.trim() || 'origin',
       defaultBranch: branchInput.trim(),
+      remoteUrl: onboardingRemoteUrl.trim() || undefined,
+      authMode: onboardingAuthMode,
       configuredAt: new Date().toISOString()
     });
-  }, [showOnboarding, status?.repositoryPath, remoteInput, branchInput]);
+  }, [showOnboarding, status?.repositoryPath, remoteInput, branchInput, onboardingRemoteUrl, onboardingAuthMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -832,6 +843,8 @@ export default function App(): JSX.Element {
         repositoryPath: targetPath,
         remote: remoteInput.trim() || 'origin',
         defaultBranch: branchInput.trim(),
+        remoteUrl: onboardingRemoteUrl.trim() || undefined,
+        authMode: onboardingAuthMode,
         configuredAt: new Date().toISOString()
       });
     }
@@ -869,16 +882,66 @@ export default function App(): JSX.Element {
   }
 
   async function completeOnboarding(): Promise<void> {
-    const opened = await openRepository(undefined, {
-      showOpenSuccessNotice: true,
-      bootstrapIfEmpty: true,
-      persistConfig: true
-    });
-
-    if (!opened) {
+    const localPath = repoInput.trim();
+    if (!localPath) {
+      setNotice({ kind: 'error', text: tt('Please enter a repository path.', 'Bitte einen Repository-Pfad eingeben.') });
+      repoInputRef.current?.focus();
       return;
     }
 
+    const remoteUrl = onboardingRemoteUrl.trim();
+    const remoteName = remoteInput.trim() || 'origin';
+    const defaultBranch = branchInput.trim() || undefined;
+    const authInput =
+      remoteUrl.length === 0
+        ? undefined
+        : onboardingAuthMode === 'https-token'
+          ? {
+              mode: 'https-token' as const,
+              username: onboardingRemoteUsername.trim() || 'git',
+              token: onboardingRemoteToken
+            }
+          : { mode: 'system' as const };
+
+    setBusy(true);
+    const connected = await runQuery(
+      () =>
+        window.myMarkdown.connectRepository({
+          localPath,
+          remoteName,
+          remoteUrl: remoteUrl || undefined,
+          defaultBranch,
+          auth: authInput
+        }),
+      tt('Repository connection established.', 'Repository-Verbindung hergestellt.')
+    );
+
+    if (!connected) {
+      setBusy(false);
+      return;
+    }
+
+    setRepoInput(connected.repositoryPath);
+    setOnboardingRemoteToken('');
+
+    await refreshRuntimeInfo();
+    await refreshStatus(false);
+    await maybeBootstrapRepositoryIfEmpty();
+    await Promise.all([refreshMarkdownFiles(), refreshIdentity()]);
+    if (connected.mode === 'git') {
+      await refreshIncomingDelta(false);
+    }
+
+    persistSetupConfig({
+      repositoryPath: connected.repositoryPath,
+      remote: remoteName,
+      defaultBranch: defaultBranch ?? '',
+      remoteUrl: remoteUrl || undefined,
+      authMode: onboardingAuthMode,
+      configuredAt: new Date().toISOString()
+    });
+
+    setBusy(false);
     autoOpenAttemptedRef.current = true;
     setShowOnboarding(false);
   }
@@ -1506,8 +1569,8 @@ export default function App(): JSX.Element {
           <h1>{tt('Welcome to myMarkDown', 'Willkommen bei myMarkDown')}</h1>
           <p className="onboarding-lead">
             {tt(
-              'Connect your Git repository first. If the repository is empty, myMarkDown will initialize the required project structure.',
-              'Verbinde zuerst dein Git-Repository. Wenn das Repository leer ist, initialisiert myMarkDown die benötigte Projektstruktur automatisch.'
+              'Connect a local folder and optionally configure remote Git login. If the repository is empty, myMarkDown will initialize the required project structure.',
+              'Verbinde einen lokalen Ordner und optional die Remote-Git-Anmeldung. Wenn das Repository leer ist, initialisiert myMarkDown die benötigte Projektstruktur automatisch.'
             )}
           </p>
 
@@ -1548,6 +1611,61 @@ export default function App(): JSX.Element {
           </label>
 
           <label className="onboarding-field">
+            <span>{tt('Remote URL (optional)', 'Remote-URL (optional)')}</span>
+            <input
+              value={onboardingRemoteUrl}
+              onChange={(event) => setOnboardingRemoteUrl(event.target.value)}
+              placeholder={tt('https://github.com/org/repo.git', 'https://github.com/org/repo.git')}
+              disabled={busy}
+            />
+          </label>
+
+          <label className="onboarding-field">
+            <span>{tt('Remote Login', 'Remote-Anmeldung')}</span>
+            <div className="toggle-group">
+              <button
+                className={onboardingAuthMode === 'system' ? 'toggle-active' : ''}
+                onClick={() => setOnboardingAuthMode('system')}
+                disabled={busy || onboardingRemoteUrl.trim().length === 0}
+              >
+                {tt('System Credentials', 'System-Credentials')}
+              </button>
+              <button
+                className={onboardingAuthMode === 'https-token' ? 'toggle-active' : ''}
+                onClick={() => setOnboardingAuthMode('https-token')}
+                disabled={busy || onboardingRemoteUrl.trim().length === 0}
+              >
+                {tt('HTTPS User/Token', 'HTTPS User/Token')}
+              </button>
+            </div>
+          </label>
+
+          {onboardingRemoteUrl.trim().length > 0 && onboardingAuthMode === 'https-token' ? (
+            <>
+              <label className="onboarding-field">
+                <span>{tt('Remote Username', 'Remote-Benutzername')}</span>
+                <input
+                  value={onboardingRemoteUsername}
+                  onChange={(event) => setOnboardingRemoteUsername(event.target.value)}
+                  placeholder={tt('git', 'git')}
+                  disabled={busy}
+                />
+              </label>
+
+              <label className="onboarding-field">
+                <span>{tt('Personal Access Token', 'Personal Access Token')}</span>
+                <input
+                  type="password"
+                  value={onboardingRemoteToken}
+                  onChange={(event) => setOnboardingRemoteToken(event.target.value)}
+                  placeholder={tt('token', 'token')}
+                  disabled={busy}
+                />
+              </label>
+            </>
+          ) : null}
+
+          <label className="onboarding-field">
             <span>{tt('Default Branch (optional)', 'Standard-Branch (optional)')}</span>
             <input
               value={branchInput}
@@ -1562,6 +1680,12 @@ export default function App(): JSX.Element {
               {tt(
                 'Folders are created Git-friendly with placeholder files when needed (for example .gitkeep), because Git does not track empty directories.',
                 'Ordner werden Git-kompatibel mit Platzhalterdateien angelegt (z. B. .gitkeep), da Git keine leeren Verzeichnisse versioniert.'
+              )}
+            </p>
+            <p>
+              {tt(
+                'If a remote URL is set, myMarkDown can clone or attach the remote and verify login. Without remote URL, a local Git repository is initialized if needed.',
+                'Wenn eine Remote-URL gesetzt ist, kann myMarkDown das Remote klonen oder anbinden und die Anmeldung prüfen. Ohne Remote-URL wird bei Bedarf ein lokales Git-Repository initialisiert.'
               )}
             </p>
           </div>

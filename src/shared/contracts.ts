@@ -19,6 +19,31 @@ export interface OpenRepositoryResult {
   repositoryPath: string;
 }
 
+export type RemoteAuthMode = 'system' | 'https-token';
+
+export interface RemoteAuthInput {
+  mode: RemoteAuthMode;
+  username?: string;
+  token?: string;
+}
+
+export interface ConnectRepositoryInput {
+  localPath: string;
+  remoteName?: string;
+  remoteUrl?: string;
+  defaultBranch?: string;
+  auth?: RemoteAuthInput;
+}
+
+export interface ConnectRepositoryResult {
+  repositoryPath: string;
+  mode: 'git' | 'demo';
+  remoteConfigured: boolean;
+  clonedFromRemote: boolean;
+  initializedRepository: boolean;
+  authVerified: boolean;
+}
+
 export interface RuntimeInfo {
   gitAvailable: boolean;
   mode: 'git' | 'demo';

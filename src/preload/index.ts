@@ -4,6 +4,8 @@ import type {
   AppMenuAction,
   AppResult,
   BootstrapProjectResult,
+  ConnectRepositoryInput,
+  ConnectRepositoryResult,
   CloseCommentInput,
   CodeOwnerHintsResult,
   CommentScope,
@@ -32,6 +34,9 @@ import type {
 } from '../shared/contracts';
 
 const api = {
+  connectRepository(input: ConnectRepositoryInput): Promise<AppResult<ConnectRepositoryResult>> {
+    return ipcRenderer.invoke('repo:connect', input);
+  },
   openRepository(repositoryPath: string): Promise<AppResult<OpenRepositoryResult>> {
     return ipcRenderer.invoke('git:openRepository', repositoryPath);
   },
