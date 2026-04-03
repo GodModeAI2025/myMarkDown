@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import {
+  checkoutBranch,
   commit,
+  createBranch,
   fetch,
   getDiff,
   getGitIdentity,
@@ -10,6 +12,7 @@ import {
   openRepository,
   pull,
   push,
+  setUpstream,
   stage,
   unstage
 } from './gitAdapter';
@@ -35,6 +38,7 @@ import type {
   CodeOwnerHintsResult,
   CreateCommentInput,
   FileContentResult,
+  GitCreateBranchInput,
   GitIdentity,
   GitDiffTarget,
   GitRemoteTarget,
@@ -116,6 +120,18 @@ function registerIpcHandlers(): void {
     'git:getIncomingDelta',
     async (_event, options: GitRemoteTarget): Promise<AppResult<IncomingDeltaResult>> =>
       runQuery(() => getIncomingDelta(options))
+  );
+
+  ipcMain.handle('git:createBranch', async (_event, input: GitCreateBranchInput): Promise<AppResult<string>> =>
+    runQuery(() => createBranch(input))
+  );
+
+  ipcMain.handle('git:checkoutBranch', async (_event, branchName: string): Promise<AppResult<string>> =>
+    runQuery(() => checkoutBranch(branchName))
+  );
+
+  ipcMain.handle('git:setUpstream', async (_event, options: GitRemoteTarget): Promise<AppResult<string>> =>
+    runQuery(() => setUpstream(options))
   );
 
   ipcMain.handle('git:stage', async (_event, paths: string[]): Promise<AppResult<null>> => runMutation(() => stage(paths)));

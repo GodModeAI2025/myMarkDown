@@ -47,7 +47,8 @@ textarea {
 }
 
 .repo-open,
-.sync-controls {
+.sync-controls,
+.branch-controls {
   display: grid;
   gap: 8px;
 }
@@ -58,6 +59,10 @@ textarea {
 
 .sync-controls {
   grid-template-columns: 150px 1fr auto auto auto auto;
+}
+
+.branch-controls {
+  grid-template-columns: 1fr 220px auto auto auto;
 }
 
 input,
@@ -355,6 +360,7 @@ button:disabled {
 @media (max-width: 1020px) {
   .repo-open,
   .sync-controls,
+  .branch-controls,
   .editor-toolbar,
   .main-grid {
     grid-template-columns: 1fr;

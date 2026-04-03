@@ -7,6 +7,7 @@ import type {
   CommentThread,
   CreateCommentInput,
   FileContentResult,
+  GitCreateBranchInput,
   GitIdentity,
   GitDiffTarget,
   GitRemoteTarget,
@@ -30,6 +31,9 @@ declare global {
       getDiff(target: GitDiffTarget): Promise<AppResult<string>>;
       getIdentity(): Promise<AppResult<GitIdentity>>;
       getIncomingDelta(options: GitRemoteTarget): Promise<AppResult<IncomingDeltaResult>>;
+      createBranch(input: GitCreateBranchInput): Promise<AppResult<string>>;
+      checkoutBranch(branchName: string): Promise<AppResult<string>>;
+      setUpstream(options: GitRemoteTarget): Promise<AppResult<string>>;
       stage(paths: string[]): Promise<AppResult<null>>;
       unstage(paths: string[]): Promise<AppResult<null>>;
       commit(message: string): Promise<AppResult<null>>;

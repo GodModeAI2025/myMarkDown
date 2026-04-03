@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type {
+  GitCreateBranchInput,
   GitDiffTarget,
   GitRemoteTarget,
   GitStatusEntry,
@@ -151,6 +152,30 @@ function classifyGitFailure(rawOutput: string, args: string[]): GitFailure {
     };
   }
 
+  if (/a branch named .* already exists/.test(lower)) {
+    return {
+      code: 'GIT_BRANCH_EXISTS',
+      message: 'Branch creation failed because the branch already exists.',
+      hint: 'Nutze einen anderen Branch-Namen oder wechsle auf den bestehenden Branch.'
+    };
+  }
+
+  if (/pathspec .* did not match any file\(s\) known to git|unknown revision or path not in the working tree/.test(lower)) {
+    return {
+      code: 'GIT_BRANCH_NOT_FOUND',
+      message: 'Git could not find the requested branch or ref.',
+      hint: 'Prüfe Branch-/Ref-Namen und führe ggf. vorher Fetch aus.'
+    };
+  }
+
+  if (/not a valid branch name|fatal: '.+' is not a valid branch name/.test(lower)) {
+    return {
+      code: 'GIT_INVALID_BRANCH',
+      message: 'The branch name is invalid.',
+      hint: 'Verwende einen gültigen Git-Branchnamen ohne ungültige Zeichen.'
+    };
+  }
+
   if (/non-fast-forward|\[rejected\]|fetch first|failed to push some refs/.test(lower)) {
     return {
       code: 'GIT_NON_FAST_FORWARD',
@@ -260,6 +285,37 @@ export async function getDiff(target: GitDiffTarget = {}): Promise<string> {
   return runGit(repositoryPath, args);
 }
 
+function ensureBranchName(input: string): string {
+  const branch = input.trim();
+  if (!branch) {
+    throw new Error('Branch name cannot be empty.');
+  }
+
+  return branch;
+}
+
+export async function createBranch(input: GitCreateBranchInput): Promise<string> {
+  const repositoryPath = getOpenRepositoryPath();
+  const branchName = ensureBranchName(input.name);
+  const fromRef = input.from?.trim() || 'HEAD';
+
+  await runGit(repositoryPath, ['check-ref-format', '--branch', branchName]);
+  await runGit(repositoryPath, ['branch', branchName, fromRef]);
+
+  if (input.checkout ?? true) {
+    await runGit(repositoryPath, ['checkout', branchName]);
+  }
+
+  return branchName;
+}
+
+export async function checkoutBranch(branch: string): Promise<string> {
+  const repositoryPath = getOpenRepositoryPath();
+  const branchName = ensureBranchName(branch);
+  await runGit(repositoryPath, ['checkout', branchName]);
+  return branchName;
+}
+
 export async function stage(paths: string[]): Promise<void> {
   const repositoryPath = getOpenRepositoryPath();
   if (paths.length === 0) {
@@ -320,6 +376,15 @@ export async function push(options: GitRemoteTarget = {}): Promise<void> {
   }
 
   await runGit(repositoryPath, args);
+}
+
+export async function setUpstream(options: GitRemoteTarget = {}): Promise<string> {
+  const repositoryPath = getOpenRepositoryPath();
+  const remote = options.remote?.trim() || 'origin';
+  const status = await getStatus();
+  const branchName = ensureBranchName(options.branch?.trim() || status.branch || '');
+  await runGit(repositoryPath, ['push', '--set-upstream', remote, branchName]);
+  return `${remote}/${branchName}`;
 }
 
 export async function getGitIdentity(): Promise<{ name: string | null; email: string | null }> {

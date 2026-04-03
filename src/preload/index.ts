@@ -8,6 +8,7 @@ import type {
   CommentThread,
   CreateCommentInput,
   FileContentResult,
+  GitCreateBranchInput,
   GitIdentity,
   GitDiffTarget,
   GitRemoteTarget,
@@ -38,6 +39,15 @@ const api = {
   },
   getIncomingDelta(options: GitRemoteTarget): Promise<AppResult<IncomingDeltaResult>> {
     return ipcRenderer.invoke('git:getIncomingDelta', options);
+  },
+  createBranch(input: GitCreateBranchInput): Promise<AppResult<string>> {
+    return ipcRenderer.invoke('git:createBranch', input);
+  },
+  checkoutBranch(branchName: string): Promise<AppResult<string>> {
+    return ipcRenderer.invoke('git:checkoutBranch', branchName);
+  },
+  setUpstream(options: GitRemoteTarget): Promise<AppResult<string>> {
+    return ipcRenderer.invoke('git:setUpstream', options);
   },
   stage(paths: string[]): Promise<AppResult<null>> {
     return ipcRenderer.invoke('git:stage', paths);

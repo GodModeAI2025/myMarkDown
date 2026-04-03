@@ -47,6 +47,12 @@ export interface GitRemoteTarget {
   branch?: string;
 }
 
+export interface GitCreateBranchInput {
+  name: string;
+  from?: string;
+  checkout?: boolean;
+}
+
 export interface GitIdentity {
   name: string | null;
   email: string | null;

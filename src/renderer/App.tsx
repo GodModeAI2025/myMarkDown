@@ -51,6 +51,8 @@ export default function App(): JSX.Element {
   const [commitMessage, setCommitMessage] = useState('');
   const [remoteInput, setRemoteInput] = useState('origin');
   const [branchInput, setBranchInput] = useState('');
+  const [newBranchName, setNewBranchName] = useState('');
+  const [newBranchFromRef, setNewBranchFromRef] = useState('HEAD');
 
   const [gitIdentity, setGitIdentity] = useState<string>('unknown');
   const [markdownFiles, setMarkdownFiles] = useState<MarkdownFileEntry[]>([]);
@@ -275,6 +277,10 @@ export default function App(): JSX.Element {
     };
   }
 
+  function currentBranchTarget(): string {
+    return branchInput.trim() || status?.branch || '';
+  }
+
   async function refreshIncomingDelta(showNotice = false): Promise<void> {
     const target = currentRemoteTarget();
     const incoming = await runQuery(
@@ -477,6 +483,85 @@ export default function App(): JSX.Element {
 
     const pushed = await runQuery(() => window.myMarkdown.push(target), `Pushed to ${target.remote}.`);
     if (pushed !== null) {
+      await refreshStatus(false);
+      await refreshIncomingDelta(false);
+    }
+
+    setBusy(false);
+  }
+
+  async function createAndCheckoutBranch(): Promise<void> {
+    if (!newBranchName.trim()) {
+      setNotice({ kind: 'error', text: 'Please enter a new branch name.' });
+      return;
+    }
+
+    setBusy(true);
+    const createdBranch = await runQuery(
+      () =>
+        window.myMarkdown.createBranch({
+          name: newBranchName.trim(),
+          from: newBranchFromRef.trim() || undefined,
+          checkout: true
+        }),
+      `Created and checked out ${newBranchName.trim()}.`
+    );
+
+    if (createdBranch) {
+      setBranchInput(createdBranch);
+      setNewBranchName('');
+      await refreshStatus(false);
+      await refreshIncomingDelta(false);
+      await refreshMarkdownFiles();
+      await refreshComments();
+    }
+
+    setBusy(false);
+  }
+
+  async function checkoutBranchNow(): Promise<void> {
+    const branchName = currentBranchTarget();
+    if (!branchName) {
+      setNotice({ kind: 'error', text: 'Please enter a branch to checkout.' });
+      return;
+    }
+
+    setBusy(true);
+    const checkedOutBranch = await runQuery(
+      () => window.myMarkdown.checkoutBranch(branchName),
+      `Checked out ${branchName}.`
+    );
+
+    if (checkedOutBranch) {
+      setBranchInput(checkedOutBranch);
+      await refreshStatus(false);
+      await refreshIncomingDelta(false);
+      await refreshMarkdownFiles();
+      await refreshComments();
+    }
+
+    setBusy(false);
+  }
+
+  async function setUpstreamNow(): Promise<void> {
+    const branchName = currentBranchTarget();
+    if (!branchName) {
+      setNotice({ kind: 'error', text: 'No current branch available to set upstream.' });
+      return;
+    }
+
+    const remote = remoteInput.trim() || 'origin';
+    setBusy(true);
+    const upstream = await runQuery(
+      () =>
+        window.myMarkdown.setUpstream({
+          remote,
+          branch: branchName
+        }),
+      `Upstream set to ${remote}/${branchName}.`
+    );
+
+    if (upstream) {
       await refreshStatus(false);
       await refreshIncomingDelta(false);
     }
@@ -752,6 +837,28 @@ export default function App(): JSX.Element {
         </button>
         <button onClick={() => refreshIncomingDelta(true)} disabled={busy || !isRepoOpen}>
           Incoming Delta
+        </button>
+      </section>
+
+      <section className="branch-controls">
+        <input
+          value={newBranchName}
+          onChange={(event) => setNewBranchName(event.target.value)}
+          placeholder="new branch name"
+        />
+        <input
+          value={newBranchFromRef}
+          onChange={(event) => setNewBranchFromRef(event.target.value)}
+          placeholder="from ref (default HEAD)"
+        />
+        <button onClick={createAndCheckoutBranch} disabled={busy || !isRepoOpen}>
+          Create + Checkout
+        </button>
+        <button onClick={checkoutBranchNow} disabled={busy || !isRepoOpen}>
+          Checkout Branch
+        </button>
+        <button onClick={setUpstreamNow} disabled={busy || !isRepoOpen}>
+          Set Upstream
         </button>
       </section>
 
