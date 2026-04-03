@@ -66,6 +66,24 @@ export interface IncomingDeltaResult {
   conflictCandidates: string[];
 }
 
+export interface MarkdownSearchInput {
+  query: string;
+  maxResults?: number;
+}
+
+export interface MarkdownSearchMatch {
+  path: string;
+  line: number;
+  excerpt: string;
+}
+
+export interface MarkdownSearchResult {
+  query: string;
+  totalMatches: number;
+  truncated: boolean;
+  items: MarkdownSearchMatch[];
+}
+
 export interface MarkdownFileEntry {
   path: string;
 }

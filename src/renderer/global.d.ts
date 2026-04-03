@@ -14,6 +14,8 @@ import type {
   GitStatusResult,
   IncomingDeltaResult,
   MarkdownFileEntry,
+  MarkdownSearchInput,
+  MarkdownSearchResult,
   OpenCommentCountResult,
   OpenRepositoryResult,
   ReleaseGateStatus,
@@ -43,6 +45,7 @@ declare global {
       listMarkdownFiles(): Promise<AppResult<MarkdownFileEntry[]>>;
       readMarkdownFile(targetPath: string): Promise<AppResult<FileContentResult>>;
       writeMarkdownFile(input: SaveFileInput): Promise<AppResult<FileContentResult>>;
+      searchMarkdown(input: MarkdownSearchInput): Promise<AppResult<MarkdownSearchResult>>;
       getCodeOwnerHints(paths: string[]): Promise<AppResult<CodeOwnerHintsResult>>;
       getComments(scope: CommentScope): Promise<AppResult<CommentThread[]>>;
       createComment(input: CreateCommentInput): Promise<AppResult<CommentThread>>;

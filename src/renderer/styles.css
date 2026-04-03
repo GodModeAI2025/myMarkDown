@@ -112,6 +112,54 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.search-panel {
+  border-radius: 10px;
+  border: 1px solid #dbe6f5;
+  background: #ffffff;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.search-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.search-results p {
+  margin: 0;
+  font-size: 0.86rem;
+  color: #334155;
+}
+
+.search-results ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.search-results li button {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 2px;
+}
+
+.search-hit-path {
+  font-size: 0.78rem;
+  color: #1e3a8a;
+}
+
+.search-hit-excerpt {
+  font-size: 0.84rem;
+  color: #0f172a;
+}
+
 .main-grid {
   display: grid;
   grid-template-columns: 300px 1fr 390px;
@@ -361,6 +409,7 @@ button:disabled {
   .repo-open,
   .sync-controls,
   .branch-controls,
+  .search-row,
   .editor-toolbar,
   .main-grid {
     grid-template-columns: 1fr;

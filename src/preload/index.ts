@@ -15,6 +15,8 @@ import type {
   GitStatusResult,
   IncomingDeltaResult,
   MarkdownFileEntry,
+  MarkdownSearchInput,
+  MarkdownSearchResult,
   OpenCommentCountResult,
   OpenRepositoryResult,
   ReleaseGateStatus,
@@ -75,6 +77,9 @@ const api = {
   },
   writeMarkdownFile(input: SaveFileInput): Promise<AppResult<FileContentResult>> {
     return ipcRenderer.invoke('repo:writeMarkdownFile', input);
+  },
+  searchMarkdown(input: MarkdownSearchInput): Promise<AppResult<MarkdownSearchResult>> {
+    return ipcRenderer.invoke('repo:searchMarkdown', input);
   },
   getCodeOwnerHints(paths: string[]): Promise<AppResult<CodeOwnerHintsResult>> {
     return ipcRenderer.invoke('repo:getCodeOwnerHints', paths);

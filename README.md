@@ -9,6 +9,7 @@ Git-native desktop Markdown workspace.
 - Git workflow: status, diff, stage/unstage, commit, fetch/pull(rebase)/push
 - Branch workflow: create + checkout branch, switch branch, set upstream tracking
 - Incoming remote delta preview with conflict-candidate hints
+- Local markdown full-text search with clickable results
 - Sidecar comments in `.comments/<escaped-target>.comments.json`
 - CODEOWNERS path hints for changed/active markdown files
 - Policy/auth-aware Git error hints (protected branch, auth, non-fast-forward, conflicts)

@@ -1,10 +1,17 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { FileContentResult, MarkdownFileEntry, SaveFileInput } from '../shared/contracts';
+import type {
+  FileContentResult,
+  MarkdownFileEntry,
+  MarkdownSearchInput,
+  MarkdownSearchResult,
+  SaveFileInput
+} from '../shared/contracts';
 import { getOpenRepositoryPath } from './gitAdapter';
 import { ensurePathInsideRepo, toPosixPath } from './pathUtils';
 
 const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist']);
+const DEFAULT_MAX_SEARCH_RESULTS = 120;
 
 async function walkMarkdownFiles(rootDir: string, currentDir: string, output: string[]): Promise<void> {
   const entries = await readdir(currentDir, { withFileTypes: true });
@@ -72,5 +79,47 @@ export async function writeMarkdownFile(input: SaveFileInput): Promise<FileConte
   return {
     path: toPosixPath(input.path),
     content: input.content
+  };
+}
+
+export async function searchMarkdown(input: MarkdownSearchInput): Promise<MarkdownSearchResult> {
+  const query = input.query.trim();
+  if (!query) {
+    throw new Error('Search query cannot be empty.');
+  }
+
+  const maxResults = Math.max(1, Math.min(input.maxResults ?? DEFAULT_MAX_SEARCH_RESULTS, 500));
+  const queryLower = query.toLowerCase();
+  const files = await listMarkdownFiles();
+  const items: MarkdownSearchResult['items'] = [];
+  let totalMatches = 0;
+
+  for (const file of files) {
+    const fileContent = await readMarkdownFile(file.path);
+    const lines = fileContent.content.split(/\r?\n/);
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (!line.toLowerCase().includes(queryLower)) {
+        continue;
+      }
+
+      totalMatches += 1;
+
+      if (items.length < maxResults) {
+        items.push({
+          path: file.path,
+          line: index + 1,
+          excerpt: line.trim().slice(0, 220)
+        });
+      }
+    }
+  }
+
+  return {
+    query,
+    totalMatches,
+    truncated: totalMatches > items.length,
+    items
   };
 }

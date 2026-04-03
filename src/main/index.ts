@@ -16,7 +16,7 @@ import {
   stage,
   unstage
 } from './gitAdapter';
-import { listMarkdownFiles, readMarkdownFile, writeMarkdownFile } from './repositoryFiles';
+import { listMarkdownFiles, readMarkdownFile, searchMarkdown, writeMarkdownFile } from './repositoryFiles';
 import { getCodeOwnerHints } from './codeownersService';
 import {
   appendComment,
@@ -44,6 +44,8 @@ import type {
   GitRemoteTarget,
   GitStatusResult,
   IncomingDeltaResult,
+  MarkdownSearchInput,
+  MarkdownSearchResult,
   MarkdownFileEntry,
   OpenCommentCountResult,
   OpenRepositoryResult,
@@ -164,6 +166,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('repo:writeMarkdownFile', async (_event, input: SaveFileInput): Promise<AppResult<FileContentResult>> =>
     runQuery(() => writeMarkdownFile(input))
+  );
+
+  ipcMain.handle('repo:searchMarkdown', async (_event, input: MarkdownSearchInput): Promise<AppResult<MarkdownSearchResult>> =>
+    runQuery(() => searchMarkdown(input))
   );
 
   ipcMain.handle('repo:getCodeOwnerHints', async (_event, paths: string[]): Promise<AppResult<CodeOwnerHintsResult>> =>

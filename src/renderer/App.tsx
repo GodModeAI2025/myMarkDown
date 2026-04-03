@@ -10,6 +10,7 @@ import type {
   GitStatusResult,
   IncomingDeltaResult,
   MarkdownFileEntry,
+  MarkdownSearchResult,
   ReleaseGateStatus
 } from '../shared/contracts';
 
@@ -53,6 +54,8 @@ export default function App(): JSX.Element {
   const [branchInput, setBranchInput] = useState('');
   const [newBranchName, setNewBranchName] = useState('');
   const [newBranchFromRef, setNewBranchFromRef] = useState('HEAD');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResult, setSearchResult] = useState<MarkdownSearchResult | null>(null);
 
   const [gitIdentity, setGitIdentity] = useState<string>('unknown');
   const [markdownFiles, setMarkdownFiles] = useState<MarkdownFileEntry[]>([]);
@@ -109,6 +112,7 @@ export default function App(): JSX.Element {
       setHasCodeownersFile(false);
       setCodeownersPath('');
       setIncomingDelta(null);
+      setSearchResult(null);
       return;
     }
 
@@ -293,6 +297,29 @@ export default function App(): JSX.Element {
     }
 
     setIncomingDelta(incoming);
+  }
+
+  async function searchRepository(): Promise<void> {
+    if (!searchQuery.trim()) {
+      setNotice({ kind: 'error', text: 'Please enter a search term.' });
+      return;
+    }
+
+    setBusy(true);
+    const result = await runQuery(
+      () =>
+        window.myMarkdown.searchMarkdown({
+          query: searchQuery.trim(),
+          maxResults: 120
+        }),
+      `Search finished for "${searchQuery.trim()}".`
+    );
+
+    if (result) {
+      setSearchResult(result);
+    }
+
+    setBusy(false);
   }
 
   async function refreshStatus(showSpinner = false): Promise<void> {
@@ -879,6 +906,50 @@ export default function App(): JSX.Element {
               : 'no tracking branch'
             : 'not checked'}
         </span>
+      </section>
+
+      <section className="search-panel">
+        <div className="search-row">
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                void searchRepository();
+              }
+            }}
+            placeholder="Search markdown content..."
+            disabled={busy || !isRepoOpen}
+          />
+          <button onClick={searchRepository} disabled={busy || !isRepoOpen}>
+            Search
+          </button>
+        </div>
+        {searchResult ? (
+          <div className="search-results">
+            <p>
+              Results for <strong>{searchResult.query}</strong>: {searchResult.totalMatches}
+              {searchResult.truncated ? ' (truncated)' : ''}
+            </p>
+            <ul>
+              {searchResult.items.map((item, index) => (
+                <li key={`${item.path}:${item.line}:${index}`}>
+                  <button
+                    onClick={() => {
+                      void loadMarkdownFile(item.path);
+                    }}
+                    disabled={busy}
+                  >
+                    <span className="search-hit-path">
+                      {item.path}:{item.line}
+                    </span>
+                    <span className="search-hit-excerpt">{item.excerpt || '(empty line)'}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       <main className="main-grid">
