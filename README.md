@@ -12,6 +12,7 @@ Git-native desktop Markdown workspace.
 - Local markdown full-text search with clickable results
 - Explicit conflict highlighting for merge/rebase conflict status codes
 - App menu + keyboard shortcuts for core actions (Open, Refresh, Save, Commit, Fetch/Pull/Push, Search)
+- UI toggles for language (Deutsch/English) and theme (Light/Dark) with persistence
 - Local draft autosave + recovery prompt per repository/file
 - Sidecar comments in `.comments/<escaped-target>.comments.json`
 - CODEOWNERS path hints for changed/active markdown files

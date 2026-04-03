@@ -21,6 +21,8 @@ type Notice = {
 };
 
 type ReleaseScopeType = 'active' | 'all';
+type Locale = 'de' | 'en';
+type ThemeMode = 'light' | 'dark';
 
 function statusLabel(entry: GitStatusEntry): string {
   return `${entry.indexStatus}${entry.workTreeStatus}`.trim();
@@ -48,6 +50,16 @@ function draftStorageKey(repositoryPath: string, targetPath: string): string {
   return `mymarkdown:draft:${encodeURIComponent(repositoryPath)}:${encodeURIComponent(targetPath)}`;
 }
 
+function loadLocale(): Locale {
+  const value = localStorage.getItem('mymarkdown:locale');
+  return value === 'de' ? 'de' : 'en';
+}
+
+function loadTheme(): ThemeMode {
+  const value = localStorage.getItem('mymarkdown:theme');
+  return value === 'dark' ? 'dark' : 'light';
+}
+
 export default function App(): JSX.Element {
   const editorMountRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<ToastEditor | null>(null);
@@ -60,6 +72,8 @@ export default function App(): JSX.Element {
   const [status, setStatus] = useState<GitStatusResult | null>(null);
   const [selectedChangedPath, setSelectedChangedPath] = useState<string | null>(null);
   const [diff, setDiff] = useState('');
+  const [locale, setLocale] = useState<Locale>(loadLocale);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(loadTheme);
   const [notice, setNotice] = useState<Notice>({ kind: 'info', text: 'Open a repository to get started.' });
   const [busy, setBusy] = useState(false);
 
@@ -70,6 +84,7 @@ export default function App(): JSX.Element {
   const [newBranchFromRef, setNewBranchFromRef] = useState('HEAD');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResult, setSearchResult] = useState<MarkdownSearchResult | null>(null);
+  const [controlTab, setControlTab] = useState<'sync' | 'branch' | 'search'>('sync');
 
   const [gitIdentity, setGitIdentity] = useState<string>('unknown');
   const [markdownFiles, setMarkdownFiles] = useState<MarkdownFileEntry[]>([]);
@@ -97,19 +112,20 @@ export default function App(): JSX.Element {
   const changedFiles = status?.files ?? [];
   const conflictFiles = changedFiles.filter((entry) => isConflictEntry(entry));
   const isRepoOpen = status !== null;
+  const tt = (en: string, de: string): string => (locale === 'de' ? de : en);
   const activeCodeownerHint = activeMarkdownPath
     ? codeownerHintsByPath[normalizePath(activeMarkdownPath)] ?? null
     : null;
 
   const branchSummary = useMemo(() => {
     if (!status) {
-      return 'No repository selected';
+      return tt('No repository selected', 'Kein Repository ausgewählt');
     }
 
-    const branch = status.branch ?? 'detached HEAD';
+    const branch = status.branch ?? tt('detached HEAD', 'detached HEAD');
     const tracking = status.trackingBranch ? ` -> ${status.trackingBranch}` : '';
-    return `${branch}${tracking} | ahead ${status.ahead} / behind ${status.behind}`;
-  }, [status]);
+    return `${branch}${tracking} | ${tt('ahead', 'voraus')} ${status.ahead} / ${tt('behind', 'hinterher')} ${status.behind}`;
+  }, [status, locale]);
 
   const releaseScopePaths = useMemo(() => {
     if (releaseScopeType === 'active') {
@@ -135,6 +151,22 @@ export default function App(): JSX.Element {
   }, [status, activeMarkdownPath]);
 
   useEffect(() => {
+    if (!status) {
+      setNotice({ kind: 'info', text: tt('Open a repository to get started.', 'Öffne ein Repository, um zu starten.') });
+    }
+  }, [locale, status]);
+
+  useEffect(() => {
+    localStorage.setItem('mymarkdown:locale', locale);
+    document.documentElement.lang = locale;
+  }, [locale]);
+
+  useEffect(() => {
+    localStorage.setItem('mymarkdown:theme', themeMode);
+    document.documentElement.dataset.theme = themeMode;
+  }, [themeMode]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const setupEditor = async (): Promise<void> => {
@@ -154,7 +186,7 @@ export default function App(): JSX.Element {
         previewStyle: 'vertical',
         usageStatistics: false,
         hideModeSwitch: true,
-        placeholder: 'Select a markdown file and start editing...'
+        placeholder: tt('Select a markdown file and start editing...', 'Wähle eine Markdown-Datei und starte die Bearbeitung...')
       });
 
       editor.on('change', () => {
@@ -224,7 +256,8 @@ export default function App(): JSX.Element {
           }
           break;
         case 'focus-search':
-          searchInputRef.current?.focus();
+          setControlTab('search');
+          window.setTimeout(() => searchInputRef.current?.focus(), 0);
           break;
         default:
           break;
@@ -387,7 +420,7 @@ export default function App(): JSX.Element {
     const target = currentRemoteTarget();
     const incoming = await runQuery(
       () => window.myMarkdown.getIncomingDelta(target),
-      showNotice ? 'Incoming delta refreshed.' : undefined
+      showNotice ? tt('Incoming delta refreshed.', 'Eingehende Deltas aktualisiert.') : undefined
     );
 
     if (!incoming) {
@@ -399,7 +432,7 @@ export default function App(): JSX.Element {
 
   async function searchRepository(): Promise<void> {
     if (!searchQuery.trim()) {
-      setNotice({ kind: 'error', text: 'Please enter a search term.' });
+      setNotice({ kind: 'error', text: tt('Please enter a search term.', 'Bitte einen Suchbegriff eingeben.') });
       return;
     }
 
@@ -410,7 +443,7 @@ export default function App(): JSX.Element {
           query: searchQuery.trim(),
           maxResults: 120
         }),
-      `Search finished for "${searchQuery.trim()}".`
+      `${tt('Search finished for', 'Suche abgeschlossen für')} "${searchQuery.trim()}".`
     );
 
     if (result) {
@@ -450,7 +483,7 @@ export default function App(): JSX.Element {
   async function openRepository(explicitRepositoryPath?: string): Promise<void> {
     const targetPath = (explicitRepositoryPath ?? repoInput).trim();
     if (!targetPath) {
-      setNotice({ kind: 'error', text: 'Please enter a repository path.' });
+      setNotice({ kind: 'error', text: tt('Please enter a repository path.', 'Bitte einen Repository-Pfad eingeben.') });
       repoInputRef.current?.focus();
       return;
     }
@@ -462,7 +495,7 @@ export default function App(): JSX.Element {
     setBusy(true);
     const opened = await runQuery(
       () => window.myMarkdown.openRepository(targetPath),
-      `Repository opened: ${targetPath}`
+      `${tt('Repository opened', 'Repository geöffnet')}: ${targetPath}`
     );
 
     if (!opened) {
@@ -494,7 +527,7 @@ export default function App(): JSX.Element {
       return;
     }
 
-    setDiff(diffData || '(No diff output for selected file)');
+    setDiff(diffData || tt('(No diff output for selected file)', '(Keine Diff-Ausgabe für die gewählte Datei)'));
   }
 
   async function stageSelected(): Promise<void> {
@@ -505,7 +538,7 @@ export default function App(): JSX.Element {
     setBusy(true);
     const result = await runQuery(
       () => window.myMarkdown.stage([selectedChangedPath]),
-      `Staged ${selectedChangedPath}`
+      `${tt('Staged', 'Gestaged')}: ${selectedChangedPath}`
     );
 
     if (result !== null) {
@@ -524,7 +557,7 @@ export default function App(): JSX.Element {
     setBusy(true);
     const result = await runQuery(
       () => window.myMarkdown.unstage([selectedChangedPath]),
-      `Unstaged ${selectedChangedPath}`
+      `${tt('Unstaged', 'Unstaged rückgängig')}: ${selectedChangedPath}`
     );
 
     if (result !== null) {
@@ -543,7 +576,7 @@ export default function App(): JSX.Element {
     setBusy(true);
     const staged = await runQuery(
       () => window.myMarkdown.stage(changedFiles.map((file) => file.path)),
-      'Staged all changed files.'
+      tt('Staged all changed files.', 'Alle geänderten Dateien wurden gestaged.')
     );
 
     if (staged !== null) {
@@ -559,12 +592,15 @@ export default function App(): JSX.Element {
       .map((file) => file.path);
 
     if (staged.length === 0) {
-      setNotice({ kind: 'info', text: 'No staged files to unstage.' });
+      setNotice({ kind: 'info', text: tt('No staged files to unstage.', 'Keine gestagten Dateien zum Unstage.') });
       return;
     }
 
     setBusy(true);
-    const result = await runQuery(() => window.myMarkdown.unstage(staged), 'Unstaged all staged files.');
+    const result = await runQuery(
+      () => window.myMarkdown.unstage(staged),
+      tt('Unstaged all staged files.', 'Alle gestagten Dateien wurden zurückgesetzt.')
+    );
 
     if (result !== null) {
       await refreshStatus(false);
@@ -575,12 +611,15 @@ export default function App(): JSX.Element {
 
   async function commitChanges(): Promise<void> {
     if (!commitMessage.trim()) {
-      setNotice({ kind: 'error', text: 'Please enter a commit message.' });
+      setNotice({ kind: 'error', text: tt('Please enter a commit message.', 'Bitte eine Commit-Nachricht eingeben.') });
       return;
     }
 
     setBusy(true);
-    const committed = await runQuery(() => window.myMarkdown.commit(commitMessage.trim()), 'Commit created successfully.');
+    const committed = await runQuery(
+      () => window.myMarkdown.commit(commitMessage.trim()),
+      tt('Commit created successfully.', 'Commit erfolgreich erstellt.')
+    );
 
     if (committed !== null) {
       setCommitMessage('');
@@ -595,7 +634,10 @@ export default function App(): JSX.Element {
     setBusy(true);
     const target = currentRemoteTarget();
 
-    const fetched = await runQuery(() => window.myMarkdown.fetch(target), `Fetched from ${target.remote}.`);
+    const fetched = await runQuery(
+      () => window.myMarkdown.fetch(target),
+      `${tt('Fetched from', 'Geholt von')} ${target.remote}.`
+    );
     if (fetched !== null) {
       await refreshStatus(false);
       await refreshIncomingDelta(false);
@@ -608,7 +650,10 @@ export default function App(): JSX.Element {
     setBusy(true);
     const target = currentRemoteTarget();
 
-    const pulled = await runQuery(() => window.myMarkdown.pull(target), `Pulled from ${target.remote}.`);
+    const pulled = await runQuery(
+      () => window.myMarkdown.pull(target),
+      `${tt('Pulled from', 'Gezogen von')} ${target.remote}.`
+    );
     if (pulled !== null) {
       await refreshStatus(false);
       await refreshMarkdownFiles();
@@ -623,7 +668,10 @@ export default function App(): JSX.Element {
     setBusy(true);
     const target = currentRemoteTarget();
 
-    const pushed = await runQuery(() => window.myMarkdown.push(target), `Pushed to ${target.remote}.`);
+    const pushed = await runQuery(
+      () => window.myMarkdown.push(target),
+      `${tt('Pushed to', 'Gepusht zu')} ${target.remote}.`
+    );
     if (pushed !== null) {
       await refreshStatus(false);
       await refreshIncomingDelta(false);
@@ -634,7 +682,7 @@ export default function App(): JSX.Element {
 
   async function createAndCheckoutBranch(): Promise<void> {
     if (!newBranchName.trim()) {
-      setNotice({ kind: 'error', text: 'Please enter a new branch name.' });
+      setNotice({ kind: 'error', text: tt('Please enter a new branch name.', 'Bitte einen neuen Branch-Namen eingeben.') });
       return;
     }
 
@@ -646,7 +694,7 @@ export default function App(): JSX.Element {
           from: newBranchFromRef.trim() || undefined,
           checkout: true
         }),
-      `Created and checked out ${newBranchName.trim()}.`
+      `${tt('Created and checked out', 'Erstellt und ausgecheckt')}: ${newBranchName.trim()}.`
     );
 
     if (createdBranch) {
@@ -664,14 +712,14 @@ export default function App(): JSX.Element {
   async function checkoutBranchNow(): Promise<void> {
     const branchName = currentBranchTarget();
     if (!branchName) {
-      setNotice({ kind: 'error', text: 'Please enter a branch to checkout.' });
+      setNotice({ kind: 'error', text: tt('Please enter a branch to checkout.', 'Bitte einen Branch zum Auschecken eingeben.') });
       return;
     }
 
     setBusy(true);
     const checkedOutBranch = await runQuery(
       () => window.myMarkdown.checkoutBranch(branchName),
-      `Checked out ${branchName}.`
+      `${tt('Checked out', 'Ausgecheckt')}: ${branchName}.`
     );
 
     if (checkedOutBranch) {
@@ -688,7 +736,13 @@ export default function App(): JSX.Element {
   async function setUpstreamNow(): Promise<void> {
     const branchName = currentBranchTarget();
     if (!branchName) {
-      setNotice({ kind: 'error', text: 'No current branch available to set upstream.' });
+      setNotice({
+        kind: 'error',
+        text: tt(
+          'No current branch available to set upstream.',
+          'Kein aktueller Branch für Upstream-Konfiguration verfügbar.'
+        )
+      });
       return;
     }
 
@@ -700,7 +754,7 @@ export default function App(): JSX.Element {
           remote,
           branch: branchName
         }),
-      `Upstream set to ${remote}/${branchName}.`
+      `${tt('Upstream set to', 'Upstream gesetzt auf')} ${remote}/${branchName}.`
     );
 
     if (upstream) {
@@ -717,7 +771,12 @@ export default function App(): JSX.Element {
     }
 
     if (editorDirty && activeMarkdownPath && activeMarkdownPath !== targetPath) {
-      const proceed = window.confirm('You have unsaved changes. Switch file and discard local editor changes?');
+      const proceed = window.confirm(
+        tt(
+          'You have unsaved changes. Switch file and discard local editor changes?',
+          'Es gibt ungespeicherte Änderungen. Datei wechseln und lokale Editor-Änderungen verwerfen?'
+        )
+      );
       if (!proceed) {
         return;
       }
@@ -735,7 +794,10 @@ export default function App(): JSX.Element {
           const draftContent = localStorage.getItem(draftKey);
           if (draftContent !== null && draftContent !== file.content) {
             const restoreDraft = window.confirm(
-              `Recovered local draft for ${file.path}. Restore draft content?`
+              `${tt('Recovered local draft for', 'Lokaler Entwurf gefunden für')} ${file.path}. ${tt(
+                'Restore draft content?',
+                'Entwurf wiederherstellen?'
+              )}`
             );
             if (restoreDraft) {
               resolvedContent = draftContent;
@@ -757,7 +819,7 @@ export default function App(): JSX.Element {
       setReleaseGate(null);
       await refreshCommentsForPath(file.path);
       await refreshCommentSidecarPathForPath(file.path);
-      setNotice({ kind: 'info', text: `Loaded ${file.path}` });
+      setNotice({ kind: 'info', text: `${tt('Loaded', 'Geladen')}: ${file.path}` });
     }
 
     setBusy(false);
@@ -765,7 +827,7 @@ export default function App(): JSX.Element {
 
   async function saveActiveFile(): Promise<void> {
     if (!activeMarkdownPath) {
-      setNotice({ kind: 'error', text: 'Select a markdown file first.' });
+      setNotice({ kind: 'error', text: tt('Select a markdown file first.', 'Bitte zuerst eine Markdown-Datei auswählen.') });
       return;
     }
 
@@ -776,7 +838,7 @@ export default function App(): JSX.Element {
           path: activeMarkdownPath,
           content: getEditorMarkdown()
         }),
-      `Saved ${activeMarkdownPath}`
+      `${tt('Saved', 'Gespeichert')}: ${activeMarkdownPath}`
     );
 
     if (saveResult) {
@@ -806,12 +868,15 @@ export default function App(): JSX.Element {
 
   async function createCommentForActiveFile(): Promise<void> {
     if (!activeMarkdownPath) {
-      setNotice({ kind: 'error', text: 'Select an active markdown file first.' });
+      setNotice({
+        kind: 'error',
+        text: tt('Select an active markdown file first.', 'Bitte zuerst eine aktive Markdown-Datei auswählen.')
+      });
       return;
     }
 
     if (!newCommentText.trim()) {
-      setNotice({ kind: 'error', text: 'Comment text cannot be empty.' });
+      setNotice({ kind: 'error', text: tt('Comment text cannot be empty.', 'Kommentartext darf nicht leer sein.') });
       return;
     }
 
@@ -826,7 +891,7 @@ export default function App(): JSX.Element {
           line: Number.isFinite(lineValue) ? lineValue : undefined,
           author: gitIdentity
         }),
-      'Comment created.'
+      tt('Comment created.', 'Kommentar erstellt.')
     );
 
     if (created) {
@@ -842,12 +907,12 @@ export default function App(): JSX.Element {
 
   async function appendReply(): Promise<void> {
     if (!activeMarkdownPath || !activeCommentId) {
-      setNotice({ kind: 'error', text: 'Select a comment thread first.' });
+      setNotice({ kind: 'error', text: tt('Select a comment thread first.', 'Bitte zuerst einen Kommentar-Thread auswählen.') });
       return;
     }
 
     if (!replyText.trim()) {
-      setNotice({ kind: 'error', text: 'Reply text cannot be empty.' });
+      setNotice({ kind: 'error', text: tt('Reply text cannot be empty.', 'Antworttext darf nicht leer sein.') });
       return;
     }
 
@@ -860,7 +925,7 @@ export default function App(): JSX.Element {
           text: replyText.trim(),
           author: gitIdentity
         }),
-      'Reply added.'
+      tt('Reply added.', 'Antwort hinzugefügt.')
     );
 
     if (appended) {
@@ -874,7 +939,7 @@ export default function App(): JSX.Element {
 
   async function closeActiveComment(): Promise<void> {
     if (!activeMarkdownPath || !activeCommentId) {
-      setNotice({ kind: 'error', text: 'Select a comment thread first.' });
+      setNotice({ kind: 'error', text: tt('Select a comment thread first.', 'Bitte zuerst einen Kommentar-Thread auswählen.') });
       return;
     }
 
@@ -886,7 +951,7 @@ export default function App(): JSX.Element {
           commentId: activeCommentId,
           author: gitIdentity
         }),
-      'Comment closed.'
+      tt('Comment closed.', 'Kommentar geschlossen.')
     );
 
     if (closed) {
@@ -900,12 +965,12 @@ export default function App(): JSX.Element {
   async function checkReleaseGate(): Promise<void> {
     const normalizedReleaseId = normalizeReleaseId(releaseId);
     if (!normalizedReleaseId) {
-      setNotice({ kind: 'error', text: 'Release ID is required.' });
+      setNotice({ kind: 'error', text: tt('Release ID is required.', 'Release-ID ist erforderlich.') });
       return;
     }
 
     if (releaseScopePaths.length === 0) {
-      setNotice({ kind: 'error', text: 'Release scope is empty.' });
+      setNotice({ kind: 'error', text: tt('Release scope is empty.', 'Release-Scope ist leer.') });
       return;
     }
 
@@ -917,7 +982,7 @@ export default function App(): JSX.Element {
           targetRef: releaseTargetRef.trim() || 'HEAD',
           paths: releaseScopePaths
         }),
-      'Release gate checked.'
+      tt('Release gate checked.', 'Release-Gate geprüft.')
     );
 
     if (gate) {
@@ -931,17 +996,23 @@ export default function App(): JSX.Element {
   async function releaseVersionNow(): Promise<void> {
     const normalizedReleaseId = normalizeReleaseId(releaseId);
     if (!normalizedReleaseId) {
-      setNotice({ kind: 'error', text: 'Release ID is required.' });
+      setNotice({ kind: 'error', text: tt('Release ID is required.', 'Release-ID ist erforderlich.') });
       return;
     }
 
     if (releaseScopePaths.length === 0) {
-      setNotice({ kind: 'error', text: 'Release scope is empty.' });
+      setNotice({ kind: 'error', text: tt('Release scope is empty.', 'Release-Scope ist leer.') });
       return;
     }
 
     if (!releaseGate || !releaseGate.releasable) {
-      setNotice({ kind: 'error', text: 'Release is blocked. Run gate check and close open comments first.' });
+      setNotice({
+        kind: 'error',
+        text: tt(
+          'Release is blocked. Run gate check and close open comments first.',
+          'Release ist blockiert. Bitte zuerst Gate prüfen und offene Kommentare schließen.'
+        )
+      });
       return;
     }
 
@@ -955,15 +1026,15 @@ export default function App(): JSX.Element {
           pushTag: pushReleaseTag,
           remote: remoteInput.trim() || 'origin'
         }),
-      `Released ${normalizedReleaseId}`
+      `${tt('Released', 'Freigegeben')}: ${normalizedReleaseId}`
     );
 
     if (result) {
       setNotice({
         kind: 'info',
         text: result.pushed
-          ? `Release tag ${result.tag} created and pushed.`
-          : `Release tag ${result.tag} created locally.`
+          ? `${tt('Release tag created and pushed', 'Release-Tag erstellt und gepusht')}: ${result.tag}.`
+          : `${tt('Release tag created locally', 'Release-Tag lokal erstellt')}: ${result.tag}.`
       });
 
       await refreshStatus(false);
@@ -976,8 +1047,34 @@ export default function App(): JSX.Element {
   return (
     <div className="app-shell">
       <header className="header">
-        <h1>myMarkDown</h1>
-        <p>Git identity: {gitIdentity}</p>
+        <h1>{tt('myMarkDown', 'myMarkDown')}</h1>
+        <div className="header-controls">
+          <p>{tt('Git identity', 'Git-Identität')}: {gitIdentity}</p>
+          <div className="toggle-group">
+            <button className={locale === 'de' ? 'toggle-active' : ''} onClick={() => setLocale('de')} disabled={busy}>
+              DE
+            </button>
+            <button className={locale === 'en' ? 'toggle-active' : ''} onClick={() => setLocale('en')} disabled={busy}>
+              EN
+            </button>
+          </div>
+          <div className="toggle-group">
+            <button
+              className={themeMode === 'light' ? 'toggle-active' : ''}
+              onClick={() => setThemeMode('light')}
+              disabled={busy}
+            >
+              {tt('Light', 'Hell')}
+            </button>
+            <button
+              className={themeMode === 'dark' ? 'toggle-active' : ''}
+              onClick={() => setThemeMode('dark')}
+              disabled={busy}
+            >
+              {tt('Dark', 'Dunkel')}
+            </button>
+          </div>
+        </div>
       </header>
 
       <section className="repo-open">
@@ -985,10 +1082,10 @@ export default function App(): JSX.Element {
           ref={repoInputRef}
           value={repoInput}
           onChange={(event) => setRepoInput(event.target.value)}
-          placeholder="/absolute/path/to/repository"
+          placeholder={tt('/absolute/path/to/repository', '/absoluter/pfad/zum/repository')}
         />
         <button onClick={pickRepositoryAndOpen} disabled={busy}>
-          Browse
+          {tt('Browse', 'Durchsuchen')}
         </button>
         <button
           onClick={() => {
@@ -996,53 +1093,10 @@ export default function App(): JSX.Element {
           }}
           disabled={busy}
         >
-          Open Repository
+          {tt('Open Repository', 'Repository öffnen')}
         </button>
         <button onClick={() => refreshStatus(true)} disabled={busy || !isRepoOpen}>
-          Refresh Status
-        </button>
-      </section>
-
-      <section className="sync-controls">
-        <input value={remoteInput} onChange={(event) => setRemoteInput(event.target.value)} placeholder="remote" />
-        <input
-          value={branchInput}
-          onChange={(event) => setBranchInput(event.target.value)}
-          placeholder="branch (optional)"
-        />
-        <button onClick={fetchRemote} disabled={busy || !isRepoOpen}>
-          Fetch
-        </button>
-        <button onClick={pullRemote} disabled={busy || !isRepoOpen}>
-          Pull (rebase)
-        </button>
-        <button onClick={pushRemote} disabled={busy || !isRepoOpen}>
-          Push
-        </button>
-        <button onClick={() => refreshIncomingDelta(true)} disabled={busy || !isRepoOpen}>
-          Incoming Delta
-        </button>
-      </section>
-
-      <section className="branch-controls">
-        <input
-          value={newBranchName}
-          onChange={(event) => setNewBranchName(event.target.value)}
-          placeholder="new branch name"
-        />
-        <input
-          value={newBranchFromRef}
-          onChange={(event) => setNewBranchFromRef(event.target.value)}
-          placeholder="from ref (default HEAD)"
-        />
-        <button onClick={createAndCheckoutBranch} disabled={busy || !isRepoOpen}>
-          Create + Checkout
-        </button>
-        <button onClick={checkoutBranchNow} disabled={busy || !isRepoOpen}>
-          Checkout Branch
-        </button>
-        <button onClick={setUpstreamNow} disabled={busy || !isRepoOpen}>
-          Set Upstream
+          {tt('Refresh Status', 'Status aktualisieren')}
         </button>
       </section>
 
@@ -1050,65 +1104,145 @@ export default function App(): JSX.Element {
 
       <section className="status-bar">
         <span>
-          <strong>Branch:</strong> {branchSummary}
+          <strong>{tt('Branch', 'Branch')}:</strong> {branchSummary}
         </span>
         <span>
-          <strong>CODEOWNERS:</strong> {hasCodeownersFile ? codeownersPath || 'CODEOWNERS' : 'not found'}
+          <strong>CODEOWNERS:</strong> {hasCodeownersFile ? codeownersPath || 'CODEOWNERS' : tt('not found', 'nicht gefunden')}
         </span>
         <span>
-          <strong>Incoming:</strong>{' '}
+          <strong>{tt('Incoming', 'Eingehend')}:</strong>{' '}
           {incomingDelta
             ? incomingDelta.remoteRef
-              ? `${incomingDelta.incomingCommitCount} commit(s), ${incomingDelta.incomingFiles.length} file(s)`
-              : 'no tracking branch'
-            : 'not checked'}
+              ? `${incomingDelta.incomingCommitCount} ${tt('commit(s)', 'Commit(s)')}, ${incomingDelta.incomingFiles.length} ${tt('file(s)', 'Datei(en)')}`
+              : tt('no tracking branch', 'kein Tracking-Branch')
+            : tt('not checked', 'nicht geprüft')}
         </span>
         <span className={conflictFiles.length > 0 ? 'status-conflicts' : ''}>
-          <strong>Conflicts:</strong> {conflictFiles.length}
+          <strong>{tt('Conflicts', 'Konflikte')}:</strong> {conflictFiles.length}
         </span>
       </section>
 
-      <section className="search-panel">
-        <div className="search-row">
-          <input
-            ref={searchInputRef}
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                void searchRepository();
-              }
-            }}
-            placeholder="Search markdown content..."
-            disabled={busy || !isRepoOpen}
-          />
-          <button onClick={searchRepository} disabled={busy || !isRepoOpen}>
-            Search
+      <section className="control-card">
+        <div className="control-tabs">
+          <button
+            className={controlTab === 'sync' ? 'active-tab' : ''}
+            onClick={() => setControlTab('sync')}
+            disabled={busy}
+          >
+            {tt('Sync', 'Sync')}
+          </button>
+          <button
+            className={controlTab === 'branch' ? 'active-tab' : ''}
+            onClick={() => setControlTab('branch')}
+            disabled={busy}
+          >
+            {tt('Branch', 'Branch')}
+          </button>
+          <button
+            className={controlTab === 'search' ? 'active-tab' : ''}
+            onClick={() => setControlTab('search')}
+            disabled={busy}
+          >
+            {tt('Search', 'Suche')}
           </button>
         </div>
-        {searchResult ? (
-          <div className="search-results">
-            <p>
-              Results for <strong>{searchResult.query}</strong>: {searchResult.totalMatches}
-              {searchResult.truncated ? ' (truncated)' : ''}
-            </p>
-            <ul>
-              {searchResult.items.map((item, index) => (
-                <li key={`${item.path}:${item.line}:${index}`}>
-                  <button
-                    onClick={() => {
-                      void loadMarkdownFile(item.path);
-                    }}
-                    disabled={busy}
-                  >
-                    <span className="search-hit-path">
-                      {item.path}:{item.line}
-                    </span>
-                    <span className="search-hit-excerpt">{item.excerpt || '(empty line)'}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+
+        {controlTab === 'sync' ? (
+          <div className="sync-controls">
+            <input
+              value={remoteInput}
+              onChange={(event) => setRemoteInput(event.target.value)}
+              placeholder={tt('remote', 'remote')}
+            />
+            <input
+              value={branchInput}
+              onChange={(event) => setBranchInput(event.target.value)}
+              placeholder={tt('branch (optional)', 'Branch (optional)')}
+            />
+            <button onClick={fetchRemote} disabled={busy || !isRepoOpen}>
+              {tt('Fetch', 'Fetch')}
+            </button>
+            <button onClick={pullRemote} disabled={busy || !isRepoOpen}>
+              {tt('Pull (rebase)', 'Pull (Rebase)')}
+            </button>
+            <button onClick={pushRemote} disabled={busy || !isRepoOpen}>
+              {tt('Push', 'Push')}
+            </button>
+            <button onClick={() => refreshIncomingDelta(true)} disabled={busy || !isRepoOpen}>
+              {tt('Incoming Delta', 'Eingehende Deltas')}
+            </button>
+          </div>
+        ) : null}
+
+        {controlTab === 'branch' ? (
+          <div className="branch-controls">
+            <input
+              value={newBranchName}
+              onChange={(event) => setNewBranchName(event.target.value)}
+              placeholder={tt('new branch name', 'neuer Branch-Name')}
+            />
+            <input
+              value={newBranchFromRef}
+              onChange={(event) => setNewBranchFromRef(event.target.value)}
+              placeholder={tt('from ref (default HEAD)', 'von Ref (Standard HEAD)')}
+            />
+            <button onClick={createAndCheckoutBranch} disabled={busy || !isRepoOpen}>
+              {tt('Create + Checkout', 'Erstellen + Checkout')}
+            </button>
+            <button onClick={checkoutBranchNow} disabled={busy || !isRepoOpen}>
+              {tt('Checkout Branch', 'Branch auschecken')}
+            </button>
+            <button onClick={setUpstreamNow} disabled={busy || !isRepoOpen}>
+              {tt('Set Upstream', 'Upstream setzen')}
+            </button>
+          </div>
+        ) : null}
+
+        {controlTab === 'search' ? (
+          <div className="search-panel">
+            <div className="search-row">
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    void searchRepository();
+                  }
+                }}
+                placeholder={tt('Search markdown content...', 'Markdown-Inhalte durchsuchen...')}
+                disabled={busy || !isRepoOpen}
+              />
+              <button onClick={searchRepository} disabled={busy || !isRepoOpen}>
+                {tt('Search', 'Suche')}
+              </button>
+            </div>
+            {searchResult ? (
+              <div className="search-results">
+                <p>
+                  {tt('Results for', 'Ergebnisse für')} <strong>{searchResult.query}</strong>:{' '}
+                  {searchResult.totalMatches}
+                  {searchResult.truncated ? tt(' (truncated)', ' (gekürzt)') : ''}
+                </p>
+                <ul>
+                  {searchResult.items.map((item, index) => (
+                    <li key={`${item.path}:${item.line}:${index}`}>
+                      <button
+                        onClick={() => {
+                          void loadMarkdownFile(item.path);
+                        }}
+                        disabled={busy}
+                      >
+                        <span className="search-hit-path">
+                          {item.path}:{item.line}
+                        </span>
+                        <span className="search-hit-excerpt">{item.excerpt || tt('(empty line)', '(leere Zeile)')}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>
@@ -1116,49 +1250,50 @@ export default function App(): JSX.Element {
       <main className="main-grid">
         <section className="panel files-panel">
           <div className="panel-header">
-            <h2>Changed Files</h2>
+            <h2>{tt('Changed Files', 'Geänderte Dateien')}</h2>
             <div className="file-actions">
               <button onClick={stageSelected} disabled={busy || !selectedChangedPath}>
-                Stage Selected
+                {tt('Stage Selected', 'Auswahl stagen')}
               </button>
               <button onClick={unstageSelected} disabled={busy || !selectedChangedPath}>
-                Unstage Selected
+                {tt('Unstage Selected', 'Auswahl unstage')}
               </button>
               <button onClick={stageAll} disabled={busy || changedFiles.length === 0}>
-                Stage All
+                {tt('Stage All', 'Alle stagen')}
               </button>
               <button onClick={unstageAll} disabled={busy || changedFiles.length === 0}>
-                Unstage All
+                {tt('Unstage All', 'Alle unstage')}
               </button>
             </div>
           </div>
 
           <div className="incoming-box">
-            <strong>Remote Delta</strong>
+            <strong>{tt('Remote Delta', 'Remote-Delta')}</strong>
             {incomingDelta ? (
               incomingDelta.remoteRef ? (
                 <>
                   <p>
-                    Source: {incomingDelta.remoteRef} | commits: {incomingDelta.incomingCommitCount} | files:{' '}
+                    {tt('Source', 'Quelle')}: {incomingDelta.remoteRef} | {tt('commits', 'Commits')}:{' '}
+                    {incomingDelta.incomingCommitCount} | {tt('files', 'Dateien')}:{' '}
                     {incomingDelta.incomingFiles.length}
                   </p>
                   <p className={incomingDelta.conflictCandidates.length > 0 ? 'incoming-warning' : ''}>
-                    Conflict candidates:{' '}
+                    {tt('Conflict candidates', 'Konfliktkandidaten')}:{' '}
                     {incomingDelta.conflictCandidates.length > 0
                       ? incomingDelta.conflictCandidates.join(', ')
-                      : 'none'}
+                      : tt('none', 'keine')}
                   </p>
                 </>
               ) : (
-                <p>No tracking branch configured.</p>
+                <p>{tt('No tracking branch configured.', 'Kein Tracking-Branch konfiguriert.')}</p>
               )
             ) : (
-              <p>Run fetch or Incoming Delta to inspect remote changes.</p>
+              <p>{tt('Run fetch or Incoming Delta to inspect remote changes.', 'Führe Fetch oder Eingehende Deltas aus, um Remote-Änderungen zu sehen.')}</p>
             )}
           </div>
 
           {changedFiles.length === 0 ? (
-            <p>No changes.</p>
+            <p>{tt('No changes.', 'Keine Änderungen.')}</p>
           ) : (
             <ul>
               {changedFiles.map((file) => {
@@ -1175,7 +1310,7 @@ export default function App(): JSX.Element {
                     >
                       <span className="status-pill">{statusLabel(file)}</span>
                       <span className="path">{file.path}</span>
-                      {isConflictEntry(file) ? <span className="conflict-pill">CONFLICT</span> : null}
+                      {isConflictEntry(file) ? <span className="conflict-pill">{tt('CONFLICT', 'KONFLIKT')}</span> : null}
                       {hasOwners ? (
                         <span
                           className="owner-pill"
@@ -1184,7 +1319,7 @@ export default function App(): JSX.Element {
                           {hint?.owners.join(', ')}
                         </span>
                       ) : hasCodeownersFile ? (
-                        <span className="owner-pill owner-pill-none">unowned</span>
+                        <span className="owner-pill owner-pill-none">{tt('unowned', 'ohne Owner')}</span>
                       ) : null}
                       {file.originalPath ? <span className="rename">(from {file.originalPath})</span> : null}
                     </button>
@@ -1195,22 +1330,22 @@ export default function App(): JSX.Element {
           )}
 
           <div className="commit-box">
-            <h3>Create Commit</h3>
+            <h3>{tt('Create Commit', 'Commit erstellen')}</h3>
             <input
               ref={commitInputRef}
               value={commitMessage}
               onChange={(event) => setCommitMessage(event.target.value)}
-              placeholder="Commit message"
+              placeholder={tt('Commit message', 'Commit-Nachricht')}
             />
             <button onClick={commitChanges} disabled={busy || !isRepoOpen}>
-              Commit
+              {tt('Commit', 'Commit')}
             </button>
           </div>
         </section>
 
         <section className="panel editor-panel">
           <div className="panel-header">
-            <h2>Markdown Editor</h2>
+            <h2>{tt('Markdown Editor', 'Markdown-Editor')}</h2>
             <div className="editor-toolbar">
               <select
                 value={activeMarkdownPath}
@@ -1219,7 +1354,7 @@ export default function App(): JSX.Element {
                 }}
                 disabled={busy || markdownFiles.length === 0}
               >
-                {markdownFiles.length === 0 ? <option value="">No markdown files</option> : null}
+                {markdownFiles.length === 0 ? <option value="">{tt('No markdown files', 'Keine Markdown-Dateien')}</option> : null}
                 {markdownFiles.map((file) => (
                   <option key={file.path} value={file.path}>
                     {file.path}
@@ -1238,24 +1373,24 @@ export default function App(): JSX.Element {
                 onClick={() => switchEditorMode('markdown')}
                 disabled={busy}
               >
-                Markdown Code
+                {tt('Markdown Code', 'Markdown-Code')}
               </button>
               <button onClick={saveActiveFile} disabled={busy || !activeMarkdownPath}>
-                Save File
+                {tt('Save File', 'Datei speichern')}
               </button>
             </div>
           </div>
 
           <div className="editor-meta">
-            <span>Active File: {activeMarkdownPath || 'none'}</span>
-            <span>Dirty: {editorDirty ? 'yes' : 'no'}</span>
-            <span>Sidecar: {commentSidecarPath || '-'}</span>
+            <span>{tt('Active File', 'Aktive Datei')}: {activeMarkdownPath || tt('none', 'keine')}</span>
+            <span>{tt('Dirty', 'Ungespeichert')}: {editorDirty ? tt('yes', 'ja') : tt('no', 'nein')}</span>
+            <span>{tt('Sidecar', 'Sidecar')}: {commentSidecarPath || '-'}</span>
             <span>
-              Owners:{' '}
+              {tt('Owners', 'Owner')}:{' '}
               {activeCodeownerHint && activeCodeownerHint.owners.length > 0
                 ? activeCodeownerHint.owners.join(', ')
                 : hasCodeownersFile
-                  ? 'unowned'
+                  ? tt('unowned', 'ohne Owner')
                   : '-'}
             </span>
           </div>
@@ -1263,27 +1398,27 @@ export default function App(): JSX.Element {
           <div ref={editorMountRef} className="editor-mount" />
 
           <div className="diff-preview">
-            <h3>Selected Diff</h3>
-            <pre>{diff || 'Select a changed file to view diff output.'}</pre>
+            <h3>{tt('Selected Diff', 'Ausgewähltes Diff')}</h3>
+            <pre>{diff || tt('Select a changed file to view diff output.', 'Wähle eine geänderte Datei für die Diff-Ausgabe.')}</pre>
           </div>
         </section>
 
         <section className="panel comments-panel">
-          <h2>Comments ({openCommentsInPanel} open)</h2>
+          <h2>{tt('Comments', 'Kommentare')} ({openCommentsInPanel} {tt('open', 'offen')})</h2>
 
           <div className="comment-create">
             <input
               value={newCommentLine}
               onChange={(event) => setNewCommentLine(event.target.value)}
-              placeholder="line (optional)"
+              placeholder={tt('line (optional)', 'Zeile (optional)')}
             />
             <textarea
               value={newCommentText}
               onChange={(event) => setNewCommentText(event.target.value)}
-              placeholder="Create comment"
+              placeholder={tt('Create comment', 'Kommentar erstellen')}
             />
             <button onClick={createCommentForActiveFile} disabled={busy || !activeMarkdownPath}>
-              Add Comment
+              {tt('Add Comment', 'Kommentar hinzufügen')}
             </button>
           </div>
 
@@ -1297,7 +1432,7 @@ export default function App(): JSX.Element {
                 <div className="comment-head">
                   <strong>{comment.state.toUpperCase()}</strong>
                   <span>{comment.author}</span>
-                  <span>{comment.anchor.line ? `line ${comment.anchor.line}` : 'line -'}</span>
+                  <span>{comment.anchor.line ? `${tt('line', 'Zeile')} ${comment.anchor.line}` : `${tt('line', 'Zeile')} -`}</span>
                 </div>
                 <div className="comment-body">
                   {comment.thread.map((message) => (
@@ -1314,36 +1449,36 @@ export default function App(): JSX.Element {
             <textarea
               value={replyText}
               onChange={(event) => setReplyText(event.target.value)}
-              placeholder="Reply to selected thread"
+              placeholder={tt('Reply to selected thread', 'Auf ausgewählten Thread antworten')}
             />
             <div className="reply-actions">
               <button onClick={appendReply} disabled={busy || !activeCommentId}>
-                Reply
+                {tt('Reply', 'Antworten')}
               </button>
               <button onClick={closeActiveComment} disabled={busy || !activeCommentId}>
-                Close Thread
+                {tt('Close Thread', 'Thread schließen')}
               </button>
             </div>
           </div>
 
           <div className="release-box">
-            <h3>Release Gate</h3>
+            <h3>{tt('Release Gate', 'Release-Gate')}</h3>
             <input
               value={releaseId}
               onChange={(event) => setReleaseId(event.target.value)}
-              placeholder="release tag (e.g. release/v0.1.0)"
+              placeholder={tt('release tag (e.g. release/v0.1.0)', 'Release-Tag (z. B. release/v0.1.0)')}
             />
             <input
               value={releaseTargetRef}
               onChange={(event) => setReleaseTargetRef(event.target.value)}
-              placeholder="target ref (default HEAD)"
+              placeholder={tt('target ref (default HEAD)', 'Ziel-Ref (Standard HEAD)')}
             />
             <select
               value={releaseScopeType}
               onChange={(event) => setReleaseScopeType(event.target.value as ReleaseScopeType)}
             >
-              <option value="active">Scope: active markdown file</option>
-              <option value="all">Scope: all markdown files</option>
+              <option value="active">{tt('Scope: active markdown file', 'Scope: aktive Markdown-Datei')}</option>
+              <option value="all">{tt('Scope: all markdown files', 'Scope: alle Markdown-Dateien')}</option>
             </select>
 
             <label className="checkbox-line">
@@ -1352,27 +1487,27 @@ export default function App(): JSX.Element {
                 checked={pushReleaseTag}
                 onChange={(event) => setPushReleaseTag(event.target.checked)}
               />
-              Push tag to remote after release
+              {tt('Push tag to remote after release', 'Tag nach Release zum Remote pushen')}
             </label>
 
             <div className="reply-actions">
               <button onClick={checkReleaseGate} disabled={busy || !isRepoOpen}>
-                Check Gate
+                {tt('Check Gate', 'Gate prüfen')}
               </button>
               <button onClick={releaseVersionNow} disabled={busy || !isRepoOpen}>
-                Release Version
+                {tt('Release Version', 'Version freigeben')}
               </button>
             </div>
 
             {releaseGate ? (
               <div className="release-state">
-                <p>Releasable: {releaseGate.releasable ? 'yes' : 'no'}</p>
-                <p>Open comments: {releaseGate.openComments}</p>
+                <p>{tt('Releasable', 'Freigabefähig')}: {releaseGate.releasable ? tt('yes', 'ja') : tt('no', 'nein')}</p>
+                <p>{tt('Open comments', 'Offene Kommentare')}: {releaseGate.openComments}</p>
                 <p>
-                  Blocking IDs:{' '}
+                  {tt('Blocking IDs', 'Blockierende IDs')}:{' '}
                   {releaseGate.blockingCommentIds.length > 0
                     ? releaseGate.blockingCommentIds.join(', ')
-                    : 'none'}
+                    : tt('none', 'keine')}
                 </p>
               </div>
             ) : null}
