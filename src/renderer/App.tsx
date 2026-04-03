@@ -1048,33 +1048,7 @@ export default function App(): JSX.Element {
     <div className="app-shell">
       <header className="header">
         <h1>{tt('myMarkDown', 'myMarkDown')}</h1>
-        <div className="header-controls">
-          <p>{tt('Git identity', 'Git-Identität')}: {gitIdentity}</p>
-          <div className="toggle-group">
-            <button className={locale === 'de' ? 'toggle-active' : ''} onClick={() => setLocale('de')} disabled={busy}>
-              DE
-            </button>
-            <button className={locale === 'en' ? 'toggle-active' : ''} onClick={() => setLocale('en')} disabled={busy}>
-              EN
-            </button>
-          </div>
-          <div className="toggle-group">
-            <button
-              className={themeMode === 'light' ? 'toggle-active' : ''}
-              onClick={() => setThemeMode('light')}
-              disabled={busy}
-            >
-              {tt('Light', 'Hell')}
-            </button>
-            <button
-              className={themeMode === 'dark' ? 'toggle-active' : ''}
-              onClick={() => setThemeMode('dark')}
-              disabled={busy}
-            >
-              {tt('Dark', 'Dunkel')}
-            </button>
-          </div>
-        </div>
+        <p>{tt('Git identity', 'Git-Identität')}: {gitIdentity}</p>
       </header>
 
       <section className="repo-open">
@@ -1122,6 +1096,57 @@ export default function App(): JSX.Element {
         </span>
       </section>
 
+      <section className="settings-section">
+        <h2>{tt('Settings', 'Einstellungen')}</h2>
+        <div className="settings-grid">
+          <div className="setting-row">
+            <span className="setting-label">{tt('Language', 'Sprache')}</span>
+            <div className="toggle-group">
+              <button className={locale === 'de' ? 'toggle-active' : ''} onClick={() => setLocale('de')} disabled={busy}>
+                DE
+              </button>
+              <button className={locale === 'en' ? 'toggle-active' : ''} onClick={() => setLocale('en')} disabled={busy}>
+                EN
+              </button>
+            </div>
+          </div>
+
+          <div className="setting-row">
+            <span className="setting-label">{tt('Theme', 'Darstellung')}</span>
+            <div className="toggle-group">
+              <button
+                className={themeMode === 'light' ? 'toggle-active' : ''}
+                onClick={() => setThemeMode('light')}
+                disabled={busy}
+              >
+                {tt('Light', 'Hell')}
+              </button>
+              <button
+                className={themeMode === 'dark' ? 'toggle-active' : ''}
+                onClick={() => setThemeMode('dark')}
+                disabled={busy}
+              >
+                {tt('Dark', 'Dunkel')}
+              </button>
+            </div>
+          </div>
+
+          <div className="setting-row">
+            <span className="setting-label">{tt('Remote', 'Remote')}</span>
+            <input value={remoteInput} onChange={(event) => setRemoteInput(event.target.value)} placeholder={tt('remote', 'remote')} />
+          </div>
+
+          <div className="setting-row">
+            <span className="setting-label">{tt('Default Branch', 'Standard-Branch')}</span>
+            <input
+              value={branchInput}
+              onChange={(event) => setBranchInput(event.target.value)}
+              placeholder={tt('branch (optional)', 'Branch (optional)')}
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="control-card">
         <div className="control-tabs">
           <button
@@ -1149,16 +1174,6 @@ export default function App(): JSX.Element {
 
         {controlTab === 'sync' ? (
           <div className="sync-controls">
-            <input
-              value={remoteInput}
-              onChange={(event) => setRemoteInput(event.target.value)}
-              placeholder={tt('remote', 'remote')}
-            />
-            <input
-              value={branchInput}
-              onChange={(event) => setBranchInput(event.target.value)}
-              placeholder={tt('branch (optional)', 'Branch (optional)')}
-            />
             <button onClick={fetchRemote} disabled={busy || !isRepoOpen}>
               {tt('Fetch', 'Fetch')}
             </button>
