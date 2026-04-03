@@ -31,6 +31,15 @@ type HeadingItem = {
   text: string;
 };
 
+type SetupConfig = {
+  repositoryPath: string;
+  remote: string;
+  defaultBranch: string;
+  configuredAt: string;
+};
+
+const SETUP_CONFIG_KEY = 'mymarkdown:setup:v1';
+
 function statusLabel(entry: GitStatusEntry): string {
   return `${entry.indexStatus}${entry.workTreeStatus}`.trim();
 }
@@ -77,6 +86,12 @@ function extractHeadings(markdown: string): HeadingItem[] {
   return headings;
 }
 
+function fileNameFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  const name = normalized.split('/').pop();
+  return name && name.length > 0 ? name : path;
+}
+
 function loadLocale(): Locale {
   const value = localStorage.getItem('mymarkdown:locale');
   return value === 'de' ? 'de' : 'en';
@@ -87,6 +102,52 @@ function loadTheme(): ThemeMode {
   return value === 'dark' ? 'dark' : 'light';
 }
 
+function loadSetupConfig(): SetupConfig | null {
+  try {
+    const raw = localStorage.getItem(SETUP_CONFIG_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as Partial<SetupConfig>;
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    if (
+      typeof parsed.repositoryPath !== 'string' ||
+      typeof parsed.remote !== 'string' ||
+      typeof parsed.defaultBranch !== 'string'
+    ) {
+      return null;
+    }
+
+    const repositoryPath = parsed.repositoryPath.trim();
+    const remote = parsed.remote.trim() || 'origin';
+    const defaultBranch = parsed.defaultBranch.trim();
+    if (!repositoryPath) {
+      return null;
+    }
+
+    return {
+      repositoryPath,
+      remote,
+      defaultBranch,
+      configuredAt: typeof parsed.configuredAt === 'string' ? parsed.configuredAt : new Date().toISOString()
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistSetupConfig(config: SetupConfig): void {
+  try {
+    localStorage.setItem(SETUP_CONFIG_KEY, JSON.stringify(config));
+  } catch {
+    // Ignore local storage errors.
+  }
+}
+
 export default function App(): JSX.Element {
   const editorMountRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<ToastEditor | null>(null);
@@ -94,8 +155,11 @@ export default function App(): JSX.Element {
   const repoInputRef = useRef<HTMLInputElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const commitInputRef = useRef<HTMLInputElement | null>(null);
+  const autoOpenAttemptedRef = useRef(false);
+  const initialSetupConfig = useMemo(() => loadSetupConfig(), []);
 
-  const [repoInput, setRepoInput] = useState('');
+  const [showOnboarding, setShowOnboarding] = useState(() => initialSetupConfig === null);
+  const [repoInput, setRepoInput] = useState(initialSetupConfig?.repositoryPath ?? '');
   const [status, setStatus] = useState<GitStatusResult | null>(null);
   const [selectedChangedPath, setSelectedChangedPath] = useState<string | null>(null);
   const [diff, setDiff] = useState('');
@@ -105,8 +169,8 @@ export default function App(): JSX.Element {
   const [busy, setBusy] = useState(false);
 
   const [commitMessage, setCommitMessage] = useState('');
-  const [remoteInput, setRemoteInput] = useState('origin');
-  const [branchInput, setBranchInput] = useState('');
+  const [remoteInput, setRemoteInput] = useState(initialSetupConfig?.remote || 'origin');
+  const [branchInput, setBranchInput] = useState(initialSetupConfig?.defaultBranch || '');
   const [newBranchName, setNewBranchName] = useState('');
   const [newBranchFromRef, setNewBranchFromRef] = useState('HEAD');
   const [searchQuery, setSearchQuery] = useState('');
@@ -142,6 +206,10 @@ export default function App(): JSX.Element {
 
   const changedFiles = status?.files ?? [];
   const conflictFiles = changedFiles.filter((entry) => isConflictEntry(entry));
+  const selectedChangedEntry = selectedChangedPath
+    ? changedFiles.find((entry) => entry.path === selectedChangedPath) ?? null
+    : null;
+  const selectedIsConflict = selectedChangedEntry ? isConflictEntry(selectedChangedEntry) : false;
   const isRepoOpen = status !== null;
   const tt = (en: string, de: string): string => (locale === 'de' ? de : en);
   const activeCodeownerHint = activeMarkdownPath
@@ -168,6 +236,7 @@ export default function App(): JSX.Element {
 
   const openCommentsInPanel = comments.filter((comment) => comment.state === 'open').length;
   const headingItems = useMemo(() => extractHeadings(editorSnapshot), [editorSnapshot]);
+  const windowTitle = activeMarkdownPath ? fileNameFromPath(activeMarkdownPath) : tt('Workspace', 'Arbeitsbereich');
 
   const editorInsights = useMemo(() => {
     const plain = editorSnapshot.replace(/```[\s\S]*?```/g, ' ');
@@ -221,6 +290,27 @@ export default function App(): JSX.Element {
   }, [locale, status]);
 
   useEffect(() => {
+    if (showOnboarding) {
+      return;
+    }
+
+    if (autoOpenAttemptedRef.current) {
+      return;
+    }
+
+    if (!repoInput.trim()) {
+      return;
+    }
+
+    autoOpenAttemptedRef.current = true;
+    void openRepository(repoInput, {
+      showOpenSuccessNotice: false,
+      bootstrapIfEmpty: false,
+      persistConfig: false
+    });
+  }, [showOnboarding, repoInput]);
+
+  useEffect(() => {
     localStorage.setItem('mymarkdown:locale', locale);
     document.documentElement.lang = locale;
   }, [locale]);
@@ -229,6 +319,19 @@ export default function App(): JSX.Element {
     localStorage.setItem('mymarkdown:theme', themeMode);
     document.documentElement.dataset.theme = themeMode;
   }, [themeMode]);
+
+  useEffect(() => {
+    if (showOnboarding || !status?.repositoryPath) {
+      return;
+    }
+
+    persistSetupConfig({
+      repositoryPath: status.repositoryPath,
+      remote: remoteInput.trim() || 'origin',
+      defaultBranch: branchInput.trim(),
+      configuredAt: new Date().toISOString()
+    });
+  }, [showOnboarding, status?.repositoryPath, remoteInput, branchInput]);
 
   useEffect(() => {
     let cancelled = false;
@@ -553,12 +656,47 @@ export default function App(): JSX.Element {
     await refreshCommentsForPath(activeMarkdownPath);
   }
 
-  async function openRepository(explicitRepositoryPath?: string): Promise<void> {
+  async function maybeBootstrapRepositoryIfEmpty(): Promise<void> {
+    const repositoryState = await runQuery(() => window.myMarkdown.getRepositoryState());
+    if (!repositoryState) {
+      return;
+    }
+
+    if (!repositoryState.isEmpty) {
+      return;
+    }
+
+    const bootstrap = await runQuery(
+      () => window.myMarkdown.bootstrapProjectStructureIfEmpty(),
+      tt(
+        'Empty repository detected. Project structure was initialized.',
+        'Leeres Repository erkannt. Projektstruktur wurde initialisiert.'
+      )
+    );
+
+    if (!bootstrap || bootstrap.skipped) {
+      return;
+    }
+
+    await refreshStatus(false);
+  }
+
+  async function openRepository(
+    explicitRepositoryPath?: string,
+    options?: {
+      showOpenSuccessNotice?: boolean;
+      bootstrapIfEmpty?: boolean;
+      persistConfig?: boolean;
+    }
+  ): Promise<boolean> {
+    const showOpenSuccessNotice = options?.showOpenSuccessNotice ?? true;
+    const bootstrapIfEmpty = options?.bootstrapIfEmpty ?? false;
+    const persistConfigAfterOpen = options?.persistConfig ?? false;
     const targetPath = (explicitRepositoryPath ?? repoInput).trim();
     if (!targetPath) {
       setNotice({ kind: 'error', text: tt('Please enter a repository path.', 'Bitte einen Repository-Pfad eingeben.') });
       repoInputRef.current?.focus();
-      return;
+      return false;
     }
 
     if (repoInput !== targetPath) {
@@ -568,28 +706,75 @@ export default function App(): JSX.Element {
     setBusy(true);
     const opened = await runQuery(
       () => window.myMarkdown.openRepository(targetPath),
-      `${tt('Repository opened', 'Repository geöffnet')}: ${targetPath}`
+      showOpenSuccessNotice ? `${tt('Repository opened', 'Repository geöffnet')}: ${targetPath}` : undefined
     );
 
     if (!opened) {
       setBusy(false);
-      return;
+      return false;
     }
 
     await refreshStatus(false);
+    if (bootstrapIfEmpty) {
+      await maybeBootstrapRepositoryIfEmpty();
+    }
     await Promise.all([refreshMarkdownFiles(), refreshIdentity()]);
     await refreshIncomingDelta(false);
+
+    if (persistConfigAfterOpen) {
+      persistSetupConfig({
+        repositoryPath: targetPath,
+        remote: remoteInput.trim() || 'origin',
+        defaultBranch: branchInput.trim(),
+        configuredAt: new Date().toISOString()
+      });
+    }
+
     setBusy(false);
+    return true;
+  }
+
+  async function pickRepositoryPath(): Promise<string | null> {
+    const picked = await runQuery(() => window.myMarkdown.pickRepositoryDirectory());
+    if (!picked) {
+      return null;
+    }
+
+    return picked;
   }
 
   async function pickRepositoryAndOpen(): Promise<void> {
-    const picked = await runQuery(() => window.myMarkdown.pickRepositoryDirectory());
+    const picked = await pickRepositoryPath();
     if (!picked) {
       return;
     }
 
     setRepoInput(picked);
-    await openRepository(picked);
+    const opened = await openRepository(picked, {
+      showOpenSuccessNotice: true,
+      bootstrapIfEmpty: false,
+      persistConfig: true
+    });
+
+    if (opened && showOnboarding) {
+      autoOpenAttemptedRef.current = true;
+      setShowOnboarding(false);
+    }
+  }
+
+  async function completeOnboarding(): Promise<void> {
+    const opened = await openRepository(undefined, {
+      showOpenSuccessNotice: true,
+      bootstrapIfEmpty: true,
+      persistConfig: true
+    });
+
+    if (!opened) {
+      return;
+    }
+
+    autoOpenAttemptedRef.current = true;
+    setShowOnboarding(false);
   }
 
   async function showDiff(pathspec: string): Promise<void> {
@@ -601,6 +786,48 @@ export default function App(): JSX.Element {
     }
 
     setDiff(diffData || tt('(No diff output for selected file)', '(Keine Diff-Ausgabe für die gewählte Datei)'));
+  }
+
+  async function resolveSelectedConflict(strategy: 'ours' | 'theirs'): Promise<void> {
+    if (!selectedChangedPath) {
+      setNotice({ kind: 'error', text: tt('Select a conflict file first.', 'Bitte zuerst eine Konfliktdatei auswählen.') });
+      return;
+    }
+
+    if (!selectedIsConflict) {
+      setNotice({
+        kind: 'error',
+        text: tt(
+          'The selected file is not marked as a merge/rebase conflict.',
+          'Die ausgewählte Datei ist nicht als Merge-/Rebase-Konflikt markiert.'
+        )
+      });
+      return;
+    }
+
+    setBusy(true);
+    const resolved = await runQuery(
+      () =>
+        window.myMarkdown.resolveConflict({
+          path: selectedChangedPath,
+          strategy
+        }),
+      strategy === 'ours'
+        ? tt('Conflict resolved using local changes (ours).', 'Konflikt mit lokalen Änderungen (ours) aufgelöst.')
+        : tt('Conflict resolved using incoming changes (theirs).', 'Konflikt mit eingehenden Änderungen (theirs) aufgelöst.')
+    );
+
+    if (resolved !== null) {
+      await refreshStatus(false);
+      await refreshMarkdownFiles();
+      await showDiff(selectedChangedPath);
+
+      if (activeMarkdownPath === selectedChangedPath) {
+        await loadMarkdownFile(selectedChangedPath);
+      }
+    }
+
+    setBusy(false);
   }
 
   async function stageSelected(): Promise<void> {
@@ -1138,10 +1365,90 @@ export default function App(): JSX.Element {
     setBusy(false);
   }
 
+  if (showOnboarding) {
+    return (
+      <div className="app-shell onboarding-shell">
+        <section className="onboarding-card">
+          <h1>{tt('Welcome to myMarkDown', 'Willkommen bei myMarkDown')}</h1>
+          <p className="onboarding-lead">
+            {tt(
+              'Connect your Git repository first. If the repository is empty, myMarkDown will initialize the required project structure.',
+              'Verbinde zuerst dein Git-Repository. Wenn das Repository leer ist, initialisiert myMarkDown die benötigte Projektstruktur automatisch.'
+            )}
+          </p>
+
+          <label className="onboarding-field">
+            <span>{tt('Git Repository Path', 'Git-Repository-Pfad')}</span>
+            <div className="onboarding-row">
+              <input
+                ref={repoInputRef}
+                value={repoInput}
+                onChange={(event) => setRepoInput(event.target.value)}
+                placeholder={tt('/absolute/path/to/repository', '/absoluter/pfad/zum/repository')}
+                disabled={busy}
+              />
+              <button
+                onClick={() => {
+                  void (async () => {
+                    const picked = await pickRepositoryPath();
+                    if (picked) {
+                      setRepoInput(picked);
+                    }
+                  })();
+                }}
+                disabled={busy}
+              >
+                {tt('Browse', 'Durchsuchen')}
+              </button>
+            </div>
+          </label>
+
+          <label className="onboarding-field">
+            <span>{tt('Remote Name', 'Remote-Name')}</span>
+            <input
+              value={remoteInput}
+              onChange={(event) => setRemoteInput(event.target.value)}
+              placeholder={tt('origin', 'origin')}
+              disabled={busy}
+            />
+          </label>
+
+          <label className="onboarding-field">
+            <span>{tt('Default Branch (optional)', 'Standard-Branch (optional)')}</span>
+            <input
+              value={branchInput}
+              onChange={(event) => setBranchInput(event.target.value)}
+              placeholder={tt('main', 'main')}
+              disabled={busy}
+            />
+          </label>
+
+          <div className="onboarding-hint">
+            <p>
+              {tt(
+                'Folders are created Git-friendly with placeholder files when needed (for example .gitkeep), because Git does not track empty directories.',
+                'Ordner werden Git-kompatibel mit Platzhalterdateien angelegt (z. B. .gitkeep), da Git keine leeren Verzeichnisse versioniert.'
+              )}
+            </p>
+          </div>
+
+          <div className="onboarding-actions">
+            <button className="primary" onClick={completeOnboarding} disabled={busy}>
+              {tt('Connect Repository', 'Repository verbinden')}
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
-      <header className="header">
-        <h1>{tt('myMarkDown', 'myMarkDown')}</h1>
+      <header className="header toolbar-strip">
+        <div className="title-stack">
+          <h1>{windowTitle}</h1>
+          <p className="header-subtitle">myMarkDown</p>
+        </div>
         <div className="header-tools">
           <p>{tt('Git identity', 'Git-Identität')}: {gitIdentity}</p>
           <div className="toggle-group">
@@ -1155,7 +1462,7 @@ export default function App(): JSX.Element {
         </div>
       </header>
 
-      <section className="repo-open">
+      <section className="repo-open toolbar-strip">
         <input
           ref={repoInputRef}
           value={repoInput}
@@ -1166,8 +1473,13 @@ export default function App(): JSX.Element {
           {tt('Browse', 'Durchsuchen')}
         </button>
         <button
+          className="primary"
           onClick={() => {
-            void openRepository();
+            void openRepository(undefined, {
+              showOpenSuccessNotice: true,
+              bootstrapIfEmpty: false,
+              persistConfig: true
+            });
           }}
           disabled={busy}
         >
@@ -1180,7 +1492,7 @@ export default function App(): JSX.Element {
 
       <section className={`notice ${notice.kind}`}>{notice.text}</section>
 
-      <section className="status-bar">
+      <section className="status-bar toolbar-strip">
         <span>
           <strong>{tt('Branch', 'Branch')}:</strong> {branchSummary}
         </span>
@@ -1200,7 +1512,7 @@ export default function App(): JSX.Element {
         </span>
       </section>
 
-      <section className="settings-section">
+      <section className="settings-section toolbar-strip">
         <h2>{tt('Settings', 'Einstellungen')}</h2>
         <div className="settings-grid">
           <div className="setting-row">
@@ -1251,7 +1563,7 @@ export default function App(): JSX.Element {
         </div>
       </section>
 
-      <section className="control-card">
+      <section className="control-card toolbar-strip">
         <div className="control-tabs">
           <button
             className={controlTab === 'sync' ? 'active-tab' : ''}
@@ -1332,9 +1644,9 @@ export default function App(): JSX.Element {
                 placeholder={tt('Search markdown content...', 'Markdown-Inhalte durchsuchen...')}
                 disabled={busy || !isRepoOpen}
               />
-              <button onClick={searchRepository} disabled={busy || !isRepoOpen}>
-                {tt('Search', 'Suche')}
-              </button>
+            <button className="primary" onClick={searchRepository} disabled={busy || !isRepoOpen}>
+              {tt('Search', 'Suche')}
+            </button>
             </div>
             {searchResult ? (
               <div className="search-results">
@@ -1493,7 +1805,7 @@ export default function App(): JSX.Element {
                 onChange={(event) => setCommitMessage(event.target.value)}
                 placeholder={tt('Commit message', 'Commit-Nachricht')}
               />
-              <button onClick={commitChanges} disabled={busy || !isRepoOpen}>
+              <button className="primary" onClick={commitChanges} disabled={busy || !isRepoOpen}>
                 {tt('Commit', 'Commit')}
               </button>
             </div>
@@ -1532,7 +1844,7 @@ export default function App(): JSX.Element {
               >
                 {tt('Markdown Code', 'Markdown-Code')}
               </button>
-              <button onClick={saveActiveFile} disabled={busy || !activeMarkdownPath}>
+              <button className="primary" onClick={saveActiveFile} disabled={busy || !activeMarkdownPath}>
                 {tt('Save File', 'Datei speichern')}
               </button>
             </div>
@@ -1556,6 +1868,24 @@ export default function App(): JSX.Element {
 
           <div className="diff-preview">
             <h3>{tt('Selected Diff', 'Ausgewähltes Diff')}</h3>
+            {selectedIsConflict ? (
+              <div className="conflict-actions">
+                <p>
+                  {tt(
+                    'Conflict detected. Resolve via Git strategy:',
+                    'Konflikt erkannt. Über Git-Strategie auflösen:'
+                  )}
+                </p>
+                <div className="reply-actions">
+                  <button onClick={() => resolveSelectedConflict('ours')} disabled={busy || !selectedChangedPath}>
+                    {tt('Use Ours', 'Ours verwenden')}
+                  </button>
+                  <button onClick={() => resolveSelectedConflict('theirs')} disabled={busy || !selectedChangedPath}>
+                    {tt('Use Theirs', 'Theirs verwenden')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <pre>{diff || tt('Select a changed file to view diff output.', 'Wähle eine geänderte Datei für die Diff-Ausgabe.')}</pre>
           </div>
         </section>
@@ -1603,7 +1933,7 @@ export default function App(): JSX.Element {
                     onChange={(event) => setNewCommentText(event.target.value)}
                     placeholder={tt('Create comment', 'Kommentar erstellen')}
                   />
-                  <button onClick={createCommentForActiveFile} disabled={busy || !activeMarkdownPath}>
+                  <button className="primary" onClick={createCommentForActiveFile} disabled={busy || !activeMarkdownPath}>
                     {tt('Add Comment', 'Kommentar hinzufügen')}
                   </button>
                 </div>
@@ -1682,7 +2012,7 @@ export default function App(): JSX.Element {
                     <button onClick={checkReleaseGate} disabled={busy || !isRepoOpen}>
                       {tt('Check Gate', 'Gate prüfen')}
                     </button>
-                    <button onClick={releaseVersionNow} disabled={busy || !isRepoOpen}>
+                    <button className="primary" onClick={releaseVersionNow} disabled={busy || !isRepoOpen}>
                       {tt('Release Version', 'Version freigeben')}
                     </button>
                   </div>

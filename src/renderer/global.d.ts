@@ -2,12 +2,14 @@ import type {
   AppendCommentInput,
   AppMenuAction,
   AppResult,
+  BootstrapProjectResult,
   CloseCommentInput,
   CodeOwnerHintsResult,
   CommentScope,
   CommentThread,
   CreateCommentInput,
   FileContentResult,
+  GitConflictResolveInput,
   GitCreateBranchInput,
   GitIdentity,
   GitDiffTarget,
@@ -19,6 +21,7 @@ import type {
   MarkdownSearchResult,
   OpenCommentCountResult,
   OpenRepositoryResult,
+  RepositoryState,
   ReleaseGateStatus,
   ReleaseScope,
   ReleaseVersionInput,
@@ -33,6 +36,7 @@ declare global {
       getStatus(): Promise<AppResult<GitStatusResult>>;
       getDiff(target: GitDiffTarget): Promise<AppResult<string>>;
       getIdentity(): Promise<AppResult<GitIdentity>>;
+      resolveConflict(input: GitConflictResolveInput): Promise<AppResult<null>>;
       getIncomingDelta(options: GitRemoteTarget): Promise<AppResult<IncomingDeltaResult>>;
       createBranch(input: GitCreateBranchInput): Promise<AppResult<string>>;
       checkoutBranch(branchName: string): Promise<AppResult<string>>;
@@ -46,6 +50,8 @@ declare global {
       pull(options: GitRemoteTarget): Promise<AppResult<null>>;
       push(options: GitRemoteTarget): Promise<AppResult<null>>;
       listMarkdownFiles(): Promise<AppResult<MarkdownFileEntry[]>>;
+      getRepositoryState(): Promise<AppResult<RepositoryState>>;
+      bootstrapProjectStructureIfEmpty(): Promise<AppResult<BootstrapProjectResult>>;
       readMarkdownFile(targetPath: string): Promise<AppResult<FileContentResult>>;
       writeMarkdownFile(input: SaveFileInput): Promise<AppResult<FileContentResult>>;
       searchMarkdown(input: MarkdownSearchInput): Promise<AppResult<MarkdownSearchResult>>;

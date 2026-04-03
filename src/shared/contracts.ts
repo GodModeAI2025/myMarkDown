@@ -53,6 +53,11 @@ export interface GitCreateBranchInput {
   checkout?: boolean;
 }
 
+export interface GitConflictResolveInput {
+  path: string;
+  strategy: 'ours' | 'theirs';
+}
+
 export type AppMenuAction =
   | 'open-repository'
   | 'refresh-status'
@@ -99,6 +104,21 @@ export interface MarkdownSearchResult {
 
 export interface MarkdownFileEntry {
   path: string;
+}
+
+export interface RepositoryState {
+  repositoryPath: string;
+  hasCommits: boolean;
+  trackedFileCount: number;
+  untrackedFileCount: number;
+  isEmpty: boolean;
+}
+
+export interface BootstrapProjectResult {
+  skipped: boolean;
+  reason?: string;
+  createdDirectories: string[];
+  createdFiles: string[];
 }
 
 export interface FileContentResult {

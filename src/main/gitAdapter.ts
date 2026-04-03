@@ -4,12 +4,14 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type {
+  GitConflictResolveInput,
   GitCreateBranchInput,
   GitDiffTarget,
   GitRemoteTarget,
   GitStatusEntry,
   GitStatusResult,
-  IncomingDeltaResult
+  IncomingDeltaResult,
+  RepositoryState
 } from '../shared/contracts';
 
 const execFileAsync = promisify(execFile);
@@ -245,6 +247,39 @@ export async function openRepository(repositoryPath: string): Promise<string> {
   return topLevel;
 }
 
+async function hasHeadCommit(repositoryPath: string): Promise<boolean> {
+  try {
+    await runGit(repositoryPath, ['rev-parse', '--verify', 'HEAD']);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function inspectRepositoryState(): Promise<RepositoryState> {
+  const repositoryPath = getOpenRepositoryPath();
+  const [trackedRaw, statusRaw, hasCommits] = await Promise.all([
+    runGit(repositoryPath, ['ls-files']),
+    runGit(repositoryPath, ['status', '--porcelain']),
+    hasHeadCommit(repositoryPath)
+  ]);
+
+  const trackedFiles = uniquePaths(trackedRaw.split('\n'));
+  const statusLines = statusRaw
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+  const untrackedFileCount = statusLines.filter((line) => line.startsWith('?? ')).length;
+
+  return {
+    repositoryPath,
+    hasCommits,
+    trackedFileCount: trackedFiles.length,
+    untrackedFileCount,
+    isEmpty: !hasCommits && trackedFiles.length === 0 && statusLines.length === 0
+  };
+}
+
 export async function getStatus(): Promise<GitStatusResult> {
   const repositoryPath = getOpenRepositoryPath();
   const stdout = await runGit(repositoryPath, ['status', '--porcelain', '-b']);
@@ -376,6 +411,18 @@ export async function push(options: GitRemoteTarget = {}): Promise<void> {
   }
 
   await runGit(repositoryPath, args);
+}
+
+export async function resolveConflict(input: GitConflictResolveInput): Promise<void> {
+  const repositoryPath = getOpenRepositoryPath();
+  const pathspec = input.path.trim();
+  if (!pathspec) {
+    throw new Error('Conflict file path cannot be empty.');
+  }
+
+  const strategyFlag = input.strategy === 'theirs' ? '--theirs' : '--ours';
+  await runGit(repositoryPath, ['checkout', strategyFlag, '--', pathspec]);
+  await runGit(repositoryPath, ['add', '--', pathspec]);
 }
 
 export async function setUpstream(options: GitRemoteTarget = {}): Promise<string> {

@@ -3,12 +3,14 @@ import type {
   AppendCommentInput,
   AppMenuAction,
   AppResult,
+  BootstrapProjectResult,
   CloseCommentInput,
   CodeOwnerHintsResult,
   CommentScope,
   CommentThread,
   CreateCommentInput,
   FileContentResult,
+  GitConflictResolveInput,
   GitCreateBranchInput,
   GitIdentity,
   GitDiffTarget,
@@ -20,6 +22,7 @@ import type {
   MarkdownSearchResult,
   OpenCommentCountResult,
   OpenRepositoryResult,
+  RepositoryState,
   ReleaseGateStatus,
   ReleaseScope,
   ReleaseVersionInput,
@@ -39,6 +42,9 @@ const api = {
   },
   getIdentity(): Promise<AppResult<GitIdentity>> {
     return ipcRenderer.invoke('git:getIdentity');
+  },
+  resolveConflict(input: GitConflictResolveInput): Promise<AppResult<null>> {
+    return ipcRenderer.invoke('git:resolveConflict', input);
   },
   getIncomingDelta(options: GitRemoteTarget): Promise<AppResult<IncomingDeltaResult>> {
     return ipcRenderer.invoke('git:getIncomingDelta', options);
@@ -86,6 +92,12 @@ const api = {
   },
   listMarkdownFiles(): Promise<AppResult<MarkdownFileEntry[]>> {
     return ipcRenderer.invoke('repo:listMarkdownFiles');
+  },
+  getRepositoryState(): Promise<AppResult<RepositoryState>> {
+    return ipcRenderer.invoke('repo:getState');
+  },
+  bootstrapProjectStructureIfEmpty(): Promise<AppResult<BootstrapProjectResult>> {
+    return ipcRenderer.invoke('repo:bootstrapIfEmpty');
   },
   readMarkdownFile(targetPath: string): Promise<AppResult<FileContentResult>> {
     return ipcRenderer.invoke('repo:readMarkdownFile', targetPath);

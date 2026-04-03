@@ -13,11 +13,19 @@ import {
   openRepository,
   pull,
   push,
+  resolveConflict,
   setUpstream,
   stage,
   unstage
 } from './gitAdapter';
-import { listMarkdownFiles, readMarkdownFile, searchMarkdown, writeMarkdownFile } from './repositoryFiles';
+import {
+  bootstrapProjectStructureIfEmpty,
+  getRepositoryState,
+  listMarkdownFiles,
+  readMarkdownFile,
+  searchMarkdown,
+  writeMarkdownFile
+} from './repositoryFiles';
 import { getCodeOwnerHints } from './codeownersService';
 import {
   appendComment,
@@ -40,6 +48,8 @@ import type {
   CodeOwnerHintsResult,
   CreateCommentInput,
   FileContentResult,
+  BootstrapProjectResult,
+  GitConflictResolveInput,
   GitCreateBranchInput,
   GitIdentity,
   GitDiffTarget,
@@ -51,6 +61,7 @@ import type {
   MarkdownFileEntry,
   OpenCommentCountResult,
   OpenRepositoryResult,
+  RepositoryState,
   ReleaseGateStatus,
   ReleaseScope,
   ReleaseVersionInput,
@@ -247,6 +258,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('git:getIdentity', async (): Promise<AppResult<GitIdentity>> => runQuery(() => getGitIdentity()));
 
+  ipcMain.handle('git:resolveConflict', async (_event, input: GitConflictResolveInput): Promise<AppResult<null>> =>
+    runMutation(() => resolveConflict(input))
+  );
+
   ipcMain.handle(
     'git:getIncomingDelta',
     async (_event, options: GitRemoteTarget): Promise<AppResult<IncomingDeltaResult>> =>
@@ -291,6 +306,12 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('repo:listMarkdownFiles', async (): Promise<AppResult<MarkdownFileEntry[]>> =>
     runQuery(() => listMarkdownFiles())
+  );
+
+  ipcMain.handle('repo:getState', async (): Promise<AppResult<RepositoryState>> => runQuery(() => getRepositoryState()));
+
+  ipcMain.handle('repo:bootstrapIfEmpty', async (): Promise<AppResult<BootstrapProjectResult>> =>
+    runQuery(() => bootstrapProjectStructureIfEmpty())
   );
 
   ipcMain.handle('repo:readMarkdownFile', async (_event, targetPath: string): Promise<AppResult<FileContentResult>> =>
