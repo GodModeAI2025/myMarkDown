@@ -121,6 +121,11 @@ function loadTheme(): ThemeMode {
   return value === 'dark' ? 'dark' : 'light';
 }
 
+function loadAdvancedPanelsVisibility(): boolean {
+  const value = localStorage.getItem('mymarkdown:show-advanced-panels');
+  return value === '1';
+}
+
 function loadSetupConfig(): SetupConfig | null {
   try {
     const raw = localStorage.getItem(SETUP_CONFIG_KEY);
@@ -194,6 +199,7 @@ export default function App(): JSX.Element {
   const initialSetupConfig = useMemo(() => loadSetupConfig(), []);
 
   const [showOnboarding, setShowOnboarding] = useState(() => initialSetupConfig === null);
+  const [showAdvancedPanels, setShowAdvancedPanels] = useState(loadAdvancedPanelsVisibility);
   const [repoInput, setRepoInput] = useState(initialSetupConfig?.repositoryPath ?? '');
   const [onboardingRemoteUrl, setOnboardingRemoteUrl] = useState(initialSetupConfig?.remoteUrl ?? '');
   const [onboardingAuthMode, setOnboardingAuthMode] = useState<RemoteAuthMode>(initialSetupConfig?.authMode ?? 'system');
@@ -407,6 +413,10 @@ export default function App(): JSX.Element {
   }, [themeMode]);
 
   useEffect(() => {
+    localStorage.setItem('mymarkdown:show-advanced-panels', showAdvancedPanels ? '1' : '0');
+  }, [showAdvancedPanels]);
+
+  useEffect(() => {
     if (!isDemoMode) {
       return;
     }
@@ -524,6 +534,7 @@ export default function App(): JSX.Element {
           }
           break;
         case 'focus-search':
+          setShowAdvancedPanels(true);
           setControlTab('search');
           window.setTimeout(() => searchInputRef.current?.focus(), 0);
           break;
@@ -1744,6 +1755,9 @@ export default function App(): JSX.Element {
           </p>
           <p>{tt('Git identity', 'Git-Identität')}: {gitIdentity}</p>
           <div className="toggle-group">
+            <button className={showAdvancedPanels ? 'toggle-active' : ''} onClick={() => setShowAdvancedPanels((value) => !value)}>
+              {tt('Advanced', 'Erweitert')}
+            </button>
             <button className={showLeftSidebar ? 'toggle-active' : ''} onClick={() => setShowLeftSidebar((value) => !value)}>
               {tt('Left Nav', 'Links Nav')}
             </button>
@@ -1787,209 +1801,213 @@ export default function App(): JSX.Element {
 
       <section className={`notice ${notice.kind}`}>{notice.text}</section>
 
-      <section className="status-bar toolbar-strip">
-        <span>
-          <strong>{tt('Branch', 'Branch')}:</strong> {branchSummary}
-        </span>
-        <span>
-          <strong>CODEOWNERS:</strong> {hasCodeownersFile ? codeownersPath || 'CODEOWNERS' : tt('not found', 'nicht gefunden')}
-        </span>
-        {!isDemoMode ? (
-          <span>
-            <strong>{tt('Incoming', 'Eingehend')}:</strong>{' '}
-            {incomingDelta
-              ? incomingDelta.remoteRef
-                ? `${incomingDelta.incomingCommitCount} ${tt('commit(s)', 'Commit(s)')}, ${incomingDelta.incomingFiles.length} ${tt('file(s)', 'Datei(en)')}`
-                : tt('no tracking branch', 'kein Tracking-Branch')
-              : tt('not checked', 'nicht geprüft')}
-          </span>
-        ) : (
-          <span>
-            <strong>{tt('Incoming', 'Eingehend')}:</strong> {tt('not available in demo mode', 'im Demo-Modus nicht verfügbar')}
-          </span>
-        )}
-        {!isDemoMode ? (
-          <span className={conflictFiles.length > 0 ? 'status-conflicts' : ''}>
-            <strong>{tt('Conflicts', 'Konflikte')}:</strong> {conflictFiles.length}
-          </span>
-        ) : null}
-      </section>
+      {showAdvancedPanels ? (
+        <>
+          <section className="status-bar toolbar-strip">
+            <span>
+              <strong>{tt('Branch', 'Branch')}:</strong> {branchSummary}
+            </span>
+            <span>
+              <strong>CODEOWNERS:</strong> {hasCodeownersFile ? codeownersPath || 'CODEOWNERS' : tt('not found', 'nicht gefunden')}
+            </span>
+            {!isDemoMode ? (
+              <span>
+                <strong>{tt('Incoming', 'Eingehend')}:</strong>{' '}
+                {incomingDelta
+                  ? incomingDelta.remoteRef
+                    ? `${incomingDelta.incomingCommitCount} ${tt('commit(s)', 'Commit(s)')}, ${incomingDelta.incomingFiles.length} ${tt('file(s)', 'Datei(en)')}`
+                    : tt('no tracking branch', 'kein Tracking-Branch')
+                  : tt('not checked', 'nicht geprüft')}
+              </span>
+            ) : (
+              <span>
+                <strong>{tt('Incoming', 'Eingehend')}:</strong> {tt('not available in demo mode', 'im Demo-Modus nicht verfügbar')}
+              </span>
+            )}
+            {!isDemoMode ? (
+              <span className={conflictFiles.length > 0 ? 'status-conflicts' : ''}>
+                <strong>{tt('Conflicts', 'Konflikte')}:</strong> {conflictFiles.length}
+              </span>
+            ) : null}
+          </section>
 
-      <section className="settings-section toolbar-strip">
-        <h2>{tt('Settings', 'Einstellungen')}</h2>
-        <div className="settings-grid">
-          <div className="setting-row">
-            <span className="setting-label">{tt('Language', 'Sprache')}</span>
-            <div className="toggle-group">
-              <button className={locale === 'de' ? 'toggle-active' : ''} onClick={() => setLocale('de')} disabled={busy}>
-                DE
-              </button>
-              <button className={locale === 'en' ? 'toggle-active' : ''} onClick={() => setLocale('en')} disabled={busy}>
-                EN
-              </button>
+          <section className="settings-section toolbar-strip">
+            <h2>{tt('Settings', 'Einstellungen')}</h2>
+            <div className="settings-grid">
+              <div className="setting-row">
+                <span className="setting-label">{tt('Language', 'Sprache')}</span>
+                <div className="toggle-group">
+                  <button className={locale === 'de' ? 'toggle-active' : ''} onClick={() => setLocale('de')} disabled={busy}>
+                    DE
+                  </button>
+                  <button className={locale === 'en' ? 'toggle-active' : ''} onClick={() => setLocale('en')} disabled={busy}>
+                    EN
+                  </button>
+                </div>
+              </div>
+
+              <div className="setting-row">
+                <span className="setting-label">{tt('Theme', 'Darstellung')}</span>
+                <div className="toggle-group">
+                  <button
+                    className={themeMode === 'light' ? 'toggle-active' : ''}
+                    onClick={() => setThemeMode('light')}
+                    disabled={busy}
+                  >
+                    {tt('Light', 'Hell')}
+                  </button>
+                  <button
+                    className={themeMode === 'dark' ? 'toggle-active' : ''}
+                    onClick={() => setThemeMode('dark')}
+                    disabled={busy}
+                  >
+                    {tt('Dark', 'Dunkel')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="setting-row">
+                <span className="setting-label">{tt('Remote', 'Remote')}</span>
+                <input
+                  value={remoteInput}
+                  onChange={(event) => setRemoteInput(event.target.value)}
+                  placeholder={tt('remote', 'remote')}
+                  disabled={busy || isDemoMode}
+                />
+              </div>
+
+              <div className="setting-row">
+                <span className="setting-label">{tt('Default Branch', 'Standard-Branch')}</span>
+                <input
+                  value={branchInput}
+                  onChange={(event) => setBranchInput(event.target.value)}
+                  placeholder={tt('branch (optional)', 'Branch (optional)')}
+                  disabled={busy || isDemoMode}
+                />
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div className="setting-row">
-            <span className="setting-label">{tt('Theme', 'Darstellung')}</span>
-            <div className="toggle-group">
+          <section className="control-card toolbar-strip">
+            <div className="control-tabs">
+              {!isDemoMode ? (
+                <button
+                  className={controlTab === 'sync' ? 'active-tab' : ''}
+                  onClick={() => setControlTab('sync')}
+                  disabled={busy}
+                >
+                  {tt('Sync', 'Sync')}
+                </button>
+              ) : null}
+              {!isDemoMode ? (
+                <button
+                  className={controlTab === 'branch' ? 'active-tab' : ''}
+                  onClick={() => setControlTab('branch')}
+                  disabled={busy}
+                >
+                  {tt('Branch', 'Branch')}
+                </button>
+              ) : null}
               <button
-                className={themeMode === 'light' ? 'toggle-active' : ''}
-                onClick={() => setThemeMode('light')}
+                className={controlTab === 'search' ? 'active-tab' : ''}
+                onClick={() => setControlTab('search')}
                 disabled={busy}
               >
-                {tt('Light', 'Hell')}
-              </button>
-              <button
-                className={themeMode === 'dark' ? 'toggle-active' : ''}
-                onClick={() => setThemeMode('dark')}
-                disabled={busy}
-              >
-                {tt('Dark', 'Dunkel')}
+                {tt('Search', 'Suche')}
               </button>
             </div>
-          </div>
 
-          <div className="setting-row">
-            <span className="setting-label">{tt('Remote', 'Remote')}</span>
-            <input
-              value={remoteInput}
-              onChange={(event) => setRemoteInput(event.target.value)}
-              placeholder={tt('remote', 'remote')}
-              disabled={busy || isDemoMode}
-            />
-          </div>
-
-          <div className="setting-row">
-            <span className="setting-label">{tt('Default Branch', 'Standard-Branch')}</span>
-            <input
-              value={branchInput}
-              onChange={(event) => setBranchInput(event.target.value)}
-              placeholder={tt('branch (optional)', 'Branch (optional)')}
-              disabled={busy || isDemoMode}
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="control-card toolbar-strip">
-        <div className="control-tabs">
-          {!isDemoMode ? (
-            <button
-              className={controlTab === 'sync' ? 'active-tab' : ''}
-              onClick={() => setControlTab('sync')}
-              disabled={busy}
-            >
-              {tt('Sync', 'Sync')}
-            </button>
-          ) : null}
-          {!isDemoMode ? (
-            <button
-              className={controlTab === 'branch' ? 'active-tab' : ''}
-              onClick={() => setControlTab('branch')}
-              disabled={busy}
-            >
-              {tt('Branch', 'Branch')}
-            </button>
-          ) : null}
-          <button
-            className={controlTab === 'search' ? 'active-tab' : ''}
-            onClick={() => setControlTab('search')}
-            disabled={busy}
-          >
-            {tt('Search', 'Suche')}
-          </button>
-        </div>
-
-        {!isDemoMode && controlTab === 'sync' ? (
-          <div className="sync-controls">
-            <button onClick={fetchRemote} disabled={busy || !isRepoOpen}>
-              {tt('Fetch', 'Fetch')}
-            </button>
-            <button onClick={pullRemote} disabled={busy || !isRepoOpen}>
-              {tt('Pull (rebase)', 'Pull (Rebase)')}
-            </button>
-            <button onClick={pushRemote} disabled={busy || !isRepoOpen}>
-              {tt('Push', 'Push')}
-            </button>
-            <button onClick={() => refreshIncomingDelta(true)} disabled={busy || !isRepoOpen}>
-              {tt('Incoming Delta', 'Eingehende Deltas')}
-            </button>
-          </div>
-        ) : null}
-
-        {!isDemoMode && controlTab === 'branch' ? (
-          <div className="branch-controls">
-            <input
-              value={newBranchName}
-              onChange={(event) => setNewBranchName(event.target.value)}
-              placeholder={tt('new branch name', 'neuer Branch-Name')}
-            />
-            <input
-              value={newBranchFromRef}
-              onChange={(event) => setNewBranchFromRef(event.target.value)}
-              placeholder={tt('from ref (default HEAD)', 'von Ref (Standard HEAD)')}
-            />
-            <button onClick={createAndCheckoutBranch} disabled={busy || !isRepoOpen}>
-              {tt('Create + Checkout', 'Erstellen + Checkout')}
-            </button>
-            <button onClick={checkoutBranchNow} disabled={busy || !isRepoOpen}>
-              {tt('Checkout Branch', 'Branch auschecken')}
-            </button>
-            <button onClick={setUpstreamNow} disabled={busy || !isRepoOpen}>
-              {tt('Set Upstream', 'Upstream setzen')}
-            </button>
-          </div>
-        ) : null}
-
-        {controlTab === 'search' ? (
-          <div className="search-panel">
-            <div className="search-row">
-              <input
-                ref={searchInputRef}
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    void searchRepository();
-                  }
-                }}
-                placeholder={tt('Search markdown content...', 'Markdown-Inhalte durchsuchen...')}
-                disabled={busy || !isRepoOpen}
-              />
-            <button className="primary" onClick={searchRepository} disabled={busy || !isRepoOpen}>
-              {tt('Search', 'Suche')}
-            </button>
-            </div>
-            {searchResult ? (
-              <div className="search-results">
-                <p>
-                  {tt('Results for', 'Ergebnisse für')} <strong>{searchResult.query}</strong>:{' '}
-                  {searchResult.totalMatches}
-                  {searchResult.truncated ? tt(' (truncated)', ' (gekürzt)') : ''}
-                </p>
-                <ul>
-                  {searchResult.items.map((item, index) => (
-                    <li key={`${item.path}:${item.line}:${index}`}>
-                      <button
-                        onClick={() => {
-                          void loadMarkdownFile(item.path);
-                        }}
-                        disabled={busy}
-                      >
-                        <span className="search-hit-path">
-                          {item.path}:{item.line}
-                        </span>
-                        <span className="search-hit-excerpt">{item.excerpt || tt('(empty line)', '(leere Zeile)')}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+            {!isDemoMode && controlTab === 'sync' ? (
+              <div className="sync-controls">
+                <button onClick={fetchRemote} disabled={busy || !isRepoOpen}>
+                  {tt('Fetch', 'Fetch')}
+                </button>
+                <button onClick={pullRemote} disabled={busy || !isRepoOpen}>
+                  {tt('Pull (rebase)', 'Pull (Rebase)')}
+                </button>
+                <button onClick={pushRemote} disabled={busy || !isRepoOpen}>
+                  {tt('Push', 'Push')}
+                </button>
+                <button onClick={() => refreshIncomingDelta(true)} disabled={busy || !isRepoOpen}>
+                  {tt('Incoming Delta', 'Eingehende Deltas')}
+                </button>
               </div>
             ) : null}
-          </div>
-        ) : null}
-      </section>
+
+            {!isDemoMode && controlTab === 'branch' ? (
+              <div className="branch-controls">
+                <input
+                  value={newBranchName}
+                  onChange={(event) => setNewBranchName(event.target.value)}
+                  placeholder={tt('new branch name', 'neuer Branch-Name')}
+                />
+                <input
+                  value={newBranchFromRef}
+                  onChange={(event) => setNewBranchFromRef(event.target.value)}
+                  placeholder={tt('from ref (default HEAD)', 'von Ref (Standard HEAD)')}
+                />
+                <button onClick={createAndCheckoutBranch} disabled={busy || !isRepoOpen}>
+                  {tt('Create + Checkout', 'Erstellen + Checkout')}
+                </button>
+                <button onClick={checkoutBranchNow} disabled={busy || !isRepoOpen}>
+                  {tt('Checkout Branch', 'Branch auschecken')}
+                </button>
+                <button onClick={setUpstreamNow} disabled={busy || !isRepoOpen}>
+                  {tt('Set Upstream', 'Upstream setzen')}
+                </button>
+              </div>
+            ) : null}
+
+            {controlTab === 'search' ? (
+              <div className="search-panel">
+                <div className="search-row">
+                  <input
+                    ref={searchInputRef}
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        void searchRepository();
+                      }
+                    }}
+                    placeholder={tt('Search markdown content...', 'Markdown-Inhalte durchsuchen...')}
+                    disabled={busy || !isRepoOpen}
+                  />
+                <button className="primary" onClick={searchRepository} disabled={busy || !isRepoOpen}>
+                  {tt('Search', 'Suche')}
+                </button>
+                </div>
+                {searchResult ? (
+                  <div className="search-results">
+                    <p>
+                      {tt('Results for', 'Ergebnisse für')} <strong>{searchResult.query}</strong>:{' '}
+                      {searchResult.totalMatches}
+                      {searchResult.truncated ? tt(' (truncated)', ' (gekürzt)') : ''}
+                    </p>
+                    <ul>
+                      {searchResult.items.map((item, index) => (
+                        <li key={`${item.path}:${item.line}:${index}`}>
+                          <button
+                            onClick={() => {
+                              void loadMarkdownFile(item.path);
+                            }}
+                            disabled={busy}
+                          >
+                            <span className="search-hit-path">
+                              {item.path}:{item.line}
+                            </span>
+                            <span className="search-hit-excerpt">{item.excerpt || tt('(empty line)', '(leere Zeile)')}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        </>
+      ) : null}
 
       <main
         className={`main-grid ${showLeftSidebar ? 'with-left' : 'without-left'} ${
@@ -2025,7 +2043,7 @@ export default function App(): JSX.Element {
               </ul>
             </div>
 
-            {!isDemoMode ? (
+            {showAdvancedPanels && !isDemoMode ? (
               <>
                 <div className="panel-header">
                   <h3>{tt('Changed Files', 'Geänderte Dateien')}</h3>
@@ -2125,9 +2143,7 @@ export default function App(): JSX.Element {
                   </button>
                 </div>
               </>
-            ) : (
-              <p className="muted">{tt('Demo mode: Git workflow panel is disabled.', 'Demo-Modus: Git-Workflow ist deaktiviert.')}</p>
-            )}
+            ) : null}
           </aside>
         ) : null}
 
@@ -2169,44 +2185,48 @@ export default function App(): JSX.Element {
             </div>
           </div>
 
-          <div className="editor-meta">
-            <span>{tt('Active File', 'Aktive Datei')}: {activeMarkdownPath || tt('none', 'keine')}</span>
-            <span>{tt('Dirty', 'Ungespeichert')}: {editorDirty ? tt('yes', 'ja') : tt('no', 'nein')}</span>
-            <span>{tt('Sidecar', 'Sidecar')}: {commentSidecarPath || '-'}</span>
-            <span>
-              {tt('Owners', 'Owner')}:{' '}
-              {activeCodeownerHint && activeCodeownerHint.owners.length > 0
-                ? activeCodeownerHint.owners.join(', ')
-                : hasCodeownersFile
-                  ? tt('unowned', 'ohne Owner')
-                  : '-'}
-            </span>
-          </div>
+          {showAdvancedPanels ? (
+            <div className="editor-meta">
+              <span>{tt('Active File', 'Aktive Datei')}: {activeMarkdownPath || tt('none', 'keine')}</span>
+              <span>{tt('Dirty', 'Ungespeichert')}: {editorDirty ? tt('yes', 'ja') : tt('no', 'nein')}</span>
+              <span>{tt('Sidecar', 'Sidecar')}: {commentSidecarPath || '-'}</span>
+              <span>
+                {tt('Owners', 'Owner')}:{' '}
+                {activeCodeownerHint && activeCodeownerHint.owners.length > 0
+                  ? activeCodeownerHint.owners.join(', ')
+                  : hasCodeownersFile
+                    ? tt('unowned', 'ohne Owner')
+                    : '-'}
+              </span>
+            </div>
+          ) : null}
 
           <div ref={editorMountRef} className="editor-mount" />
 
-          <div className="diff-preview">
-            <h3>{tt('Selected Diff', 'Ausgewähltes Diff')}</h3>
-            {selectedIsConflict ? (
-              <div className="conflict-actions">
-                <p>
-                  {tt(
-                    'Conflict detected. Resolve via Git strategy:',
-                    'Konflikt erkannt. Über Git-Strategie auflösen:'
-                  )}
-                </p>
-                <div className="reply-actions">
-                  <button onClick={() => resolveSelectedConflict('ours')} disabled={busy || !selectedChangedPath}>
-                    {tt('Use Ours', 'Ours verwenden')}
-                  </button>
-                  <button onClick={() => resolveSelectedConflict('theirs')} disabled={busy || !selectedChangedPath}>
-                    {tt('Use Theirs', 'Theirs verwenden')}
-                  </button>
+          {showAdvancedPanels ? (
+            <div className="diff-preview">
+              <h3>{tt('Selected Diff', 'Ausgewähltes Diff')}</h3>
+              {selectedIsConflict ? (
+                <div className="conflict-actions">
+                  <p>
+                    {tt(
+                      'Conflict detected. Resolve via Git strategy:',
+                      'Konflikt erkannt. Über Git-Strategie auflösen:'
+                    )}
+                  </p>
+                  <div className="reply-actions">
+                    <button onClick={() => resolveSelectedConflict('ours')} disabled={busy || !selectedChangedPath}>
+                      {tt('Use Ours', 'Ours verwenden')}
+                    </button>
+                    <button onClick={() => resolveSelectedConflict('theirs')} disabled={busy || !selectedChangedPath}>
+                      {tt('Use Theirs', 'Theirs verwenden')}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : null}
-            <pre>{diff || tt('Select a changed file to view diff output.', 'Wähle eine geänderte Datei für die Diff-Ausgabe.')}</pre>
-          </div>
+              ) : null}
+              <pre>{diff || tt('Select a changed file to view diff output.', 'Wähle eine geänderte Datei für die Diff-Ausgabe.')}</pre>
+            </div>
+          ) : null}
         </section>
 
         {showRightSidebar ? (
