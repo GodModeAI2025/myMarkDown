@@ -126,6 +126,11 @@ function loadAdvancedPanelsVisibility(): boolean {
   return value === '1';
 }
 
+function loadZenMode(): boolean {
+  const value = localStorage.getItem('mymarkdown:zen-mode');
+  return value === '1';
+}
+
 function loadSetupConfig(): SetupConfig | null {
   try {
     const raw = localStorage.getItem(SETUP_CONFIG_KEY);
@@ -200,6 +205,7 @@ export default function App(): JSX.Element {
 
   const [showOnboarding, setShowOnboarding] = useState(() => initialSetupConfig === null);
   const [showAdvancedPanels, setShowAdvancedPanels] = useState(loadAdvancedPanelsVisibility);
+  const [zenMode, setZenMode] = useState(loadZenMode);
   const [repoInput, setRepoInput] = useState(initialSetupConfig?.repositoryPath ?? '');
   const [onboardingRemoteUrl, setOnboardingRemoteUrl] = useState(initialSetupConfig?.remoteUrl ?? '');
   const [onboardingAuthMode, setOnboardingAuthMode] = useState<RemoteAuthMode>(initialSetupConfig?.authMode ?? 'system');
@@ -256,6 +262,8 @@ export default function App(): JSX.Element {
 
   const changedFiles = status?.files ?? [];
   const conflictFiles = changedFiles.filter((entry) => isConflictEntry(entry));
+  const visibleLeftSidebar = showLeftSidebar && !zenMode;
+  const visibleRightSidebar = showRightSidebar && !zenMode;
   const selectedChangedEntry = selectedChangedPath
     ? changedFiles.find((entry) => entry.path === selectedChangedPath) ?? null
     : null;
@@ -417,6 +425,10 @@ export default function App(): JSX.Element {
   }, [showAdvancedPanels]);
 
   useEffect(() => {
+    localStorage.setItem('mymarkdown:zen-mode', zenMode ? '1' : '0');
+  }, [zenMode]);
+
+  useEffect(() => {
     if (!isDemoMode) {
       return;
     }
@@ -487,7 +499,7 @@ export default function App(): JSX.Element {
   useEffect(() => {
     const unsubscribe = window.myMarkdown.onMenuAction((action: AppMenuAction) => {
       const runtime = menuRuntimeRef.current;
-      if (runtime.busy && action !== 'focus-search') {
+      if (runtime.busy && action !== 'focus-search' && action !== 'toggle-zen-mode') {
         return;
       }
 
@@ -534,9 +546,13 @@ export default function App(): JSX.Element {
           }
           break;
         case 'focus-search':
+          setZenMode(false);
           setShowAdvancedPanels(true);
           setControlTab('search');
           window.setTimeout(() => searchInputRef.current?.focus(), 0);
+          break;
+        case 'toggle-zen-mode':
+          setZenMode((previous) => !previous);
           break;
         case 'toggle-left-sidebar':
           setShowLeftSidebar((previous) => !previous);
@@ -1750,58 +1766,84 @@ export default function App(): JSX.Element {
           <p className="header-subtitle">myMarkDown</p>
         </div>
         <div className="header-tools">
-          <p className={`mode-pill ${isDemoMode ? 'demo-mode' : ''}`}>
-            {isDemoMode ? tt('Mode: Demo', 'Modus: Demo') : tt('Mode: Git', 'Modus: Git')}
-          </p>
-          <p>{tt('Git identity', 'Git-Identität')}: {gitIdentity}</p>
+          {zenMode ? (
+            <p className="mode-pill">{tt('Zen Mode', 'Zen-Modus')}</p>
+          ) : (
+            <>
+              <p className={`mode-pill ${isDemoMode ? 'demo-mode' : ''}`}>
+                {isDemoMode ? tt('Mode: Demo', 'Modus: Demo') : tt('Mode: Git', 'Modus: Git')}
+              </p>
+              <p>
+                {tt('Git identity', 'Git-Identität')}: {gitIdentity}
+              </p>
+            </>
+          )}
           <div className="toggle-group">
-            <button className={showAdvancedPanels ? 'toggle-active' : ''} onClick={() => setShowAdvancedPanels((value) => !value)}>
-              {tt('Advanced', 'Erweitert')}
+            <button className={zenMode ? 'toggle-active' : ''} onClick={() => setZenMode((value) => !value)}>
+              {tt('Zen', 'Zen')}
             </button>
-            <button className={showLeftSidebar ? 'toggle-active' : ''} onClick={() => setShowLeftSidebar((value) => !value)}>
-              {tt('Left Nav', 'Links Nav')}
-            </button>
-            <button className={showRightSidebar ? 'toggle-active' : ''} onClick={() => setShowRightSidebar((value) => !value)}>
-              {tt('Right Sidebar', 'Rechte Sidebar')}
-            </button>
+            {!zenMode ? (
+              <>
+                <button
+                  className={showAdvancedPanels ? 'toggle-active' : ''}
+                  onClick={() => setShowAdvancedPanels((value) => !value)}
+                >
+                  {tt('Advanced', 'Erweitert')}
+                </button>
+                <button
+                  className={showLeftSidebar ? 'toggle-active' : ''}
+                  onClick={() => setShowLeftSidebar((value) => !value)}
+                >
+                  {tt('Left Nav', 'Links Nav')}
+                </button>
+                <button
+                  className={showRightSidebar ? 'toggle-active' : ''}
+                  onClick={() => setShowRightSidebar((value) => !value)}
+                >
+                  {tt('Right Sidebar', 'Rechte Sidebar')}
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       </header>
 
-      <section className="repo-open toolbar-strip">
-        <input
-          ref={repoInputRef}
-          value={repoInput}
-          onChange={(event) => setRepoInput(event.target.value)}
-          placeholder={tt('/absolute/path/to/repository', '/absoluter/pfad/zum/repository')}
-        />
-        <button onClick={pickRepositoryAndOpen} disabled={busy}>
-          {tt('Browse', 'Durchsuchen')}
-        </button>
-        <button
-          className="primary"
-          onClick={() => {
-            void openRepository(undefined, {
-              showOpenSuccessNotice: true,
-              bootstrapIfEmpty: false,
-              persistConfig: true
-            });
-          }}
-          disabled={busy}
-        >
-          {tt('Open Repository', 'Repository öffnen')}
-        </button>
-        <button onClick={startDemoMode} disabled={busy}>
-          {tt('Demo Mode', 'Demo-Modus')}
-        </button>
-        <button onClick={() => refreshStatus(true)} disabled={busy || !isRepoOpen}>
-          {tt('Refresh Status', 'Status aktualisieren')}
-        </button>
-      </section>
+      {!zenMode ? (
+        <section className="repo-open toolbar-strip">
+          <input
+            ref={repoInputRef}
+            value={repoInput}
+            onChange={(event) => setRepoInput(event.target.value)}
+            placeholder={tt('/absolute/path/to/repository', '/absoluter/pfad/zum/repository')}
+          />
+          <button onClick={pickRepositoryAndOpen} disabled={busy}>
+            {tt('Browse', 'Durchsuchen')}
+          </button>
+          <button
+            className="primary"
+            onClick={() => {
+              void openRepository(undefined, {
+                showOpenSuccessNotice: true,
+                bootstrapIfEmpty: false,
+                persistConfig: true
+              });
+            }}
+            disabled={busy}
+          >
+            {tt('Open Repository', 'Repository öffnen')}
+          </button>
+          <button onClick={startDemoMode} disabled={busy}>
+            {tt('Demo Mode', 'Demo-Modus')}
+          </button>
+          <button onClick={() => refreshStatus(true)} disabled={busy || !isRepoOpen}>
+            {tt('Refresh Status', 'Status aktualisieren')}
+          </button>
+        </section>
+      ) : null}
 
-      <section className={`notice ${notice.kind}`}>{notice.text}</section>
+      {!zenMode ? <section className={`notice ${notice.kind}`}>{notice.text}</section> : null}
 
-      {showAdvancedPanels ? (
+      {!zenMode && showAdvancedPanels ? (
         <>
           <section className="status-bar toolbar-strip">
             <span>
@@ -1973,9 +2015,9 @@ export default function App(): JSX.Element {
                     placeholder={tt('Search markdown content...', 'Markdown-Inhalte durchsuchen...')}
                     disabled={busy || !isRepoOpen}
                   />
-                <button className="primary" onClick={searchRepository} disabled={busy || !isRepoOpen}>
-                  {tt('Search', 'Suche')}
-                </button>
+                  <button className="primary" onClick={searchRepository} disabled={busy || !isRepoOpen}>
+                    {tt('Search', 'Suche')}
+                  </button>
                 </div>
                 {searchResult ? (
                   <div className="search-results">
@@ -2010,11 +2052,16 @@ export default function App(): JSX.Element {
       ) : null}
 
       <main
-        className={`main-grid ${showLeftSidebar ? 'with-left' : 'without-left'} ${
-          showRightSidebar ? 'with-right' : 'without-right'
-        }`}
+        className={[
+          'main-grid',
+          zenMode ? 'zen-mode' : '',
+          visibleLeftSidebar ? 'with-left' : 'without-left',
+          visibleRightSidebar ? 'with-right' : 'without-right'
+        ]
+          .filter(Boolean)
+          .join(' ')}
       >
-        {showLeftSidebar ? (
+        {visibleLeftSidebar ? (
           <aside className="panel sidebar-panel files-panel">
             <div className="panel-header">
               <h2>{tt('Navigation', 'Navigation')}</h2>
@@ -2185,7 +2232,7 @@ export default function App(): JSX.Element {
             </div>
           </div>
 
-          {showAdvancedPanels ? (
+          {showAdvancedPanels && !zenMode ? (
             <div className="editor-meta">
               <span>{tt('Active File', 'Aktive Datei')}: {activeMarkdownPath || tt('none', 'keine')}</span>
               <span>{tt('Dirty', 'Ungespeichert')}: {editorDirty ? tt('yes', 'ja') : tt('no', 'nein')}</span>
@@ -2203,7 +2250,7 @@ export default function App(): JSX.Element {
 
           <div ref={editorMountRef} className="editor-mount" />
 
-          {showAdvancedPanels ? (
+          {showAdvancedPanels && !zenMode ? (
             <div className="diff-preview">
               <h3>{tt('Selected Diff', 'Ausgewähltes Diff')}</h3>
               {selectedIsConflict ? (
@@ -2229,7 +2276,7 @@ export default function App(): JSX.Element {
           ) : null}
         </section>
 
-        {showRightSidebar ? (
+        {visibleRightSidebar ? (
           <aside className="panel sidebar-panel comments-panel">
             <div className="panel-header sidebar-tabs">
               <button

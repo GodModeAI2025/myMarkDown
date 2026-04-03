@@ -16,7 +16,8 @@ Git-native desktop Markdown workspace.
 - Apple-style 3-pane workspace: hideable left navigation + centered editor + hideable right context sidebar
 - Right context sidebar tabs: comments, heading outline navigation, statistics/analysis insights
 - Cleaner default layout: advanced Git/status/settings panels are hidden by default and can be toggled on demand
-- View menu actions + shortcuts to toggle left/right sidebars (`Alt+CmdOrCtrl+1/2`)
+- Zen mode for distraction-free editing (collapses workspace to center editor, hides sidebars and control strips)
+- View menu actions + shortcuts to toggle zen/left/right panels (`Alt+CmdOrCtrl+Z`, `Alt+CmdOrCtrl+1/2`)
 - First-run onboarding: asks for Git repository + base settings before entering workspace
 - Onboarding connect flow supports local folder + optional remote URL login (system credentials or HTTPS user/token)
 - Connect flow can open existing repo, initialize local repo, or clone remote into an empty local folder

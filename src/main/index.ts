@@ -162,6 +162,11 @@ function configureApplicationMenu(): void {
       { role: 'toggleDevTools' },
       { type: 'separator' },
       {
+        label: 'Toggle Zen Mode',
+        accelerator: 'Alt+CmdOrCtrl+Z',
+        click: () => emitMenuAction('toggle-zen-mode')
+      },
+      {
         label: 'Toggle Left Sidebar',
         accelerator: 'Alt+CmdOrCtrl+1',
         click: () => emitMenuAction('toggle-left-sidebar')

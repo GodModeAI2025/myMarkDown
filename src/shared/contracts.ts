@@ -99,6 +99,7 @@ export type AppMenuAction =
   | 'push'
   | 'incoming-delta'
   | 'focus-search'
+  | 'toggle-zen-mode'
   | 'toggle-left-sidebar'
   | 'toggle-right-sidebar';
 

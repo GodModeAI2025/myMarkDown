@@ -477,6 +477,10 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.main-grid.zen-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .panel {
   background: var(--surface);
   border-radius: 16px;
