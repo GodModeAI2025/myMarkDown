@@ -23,6 +23,13 @@ type Notice = {
 type ReleaseScopeType = 'active' | 'all';
 type Locale = 'de' | 'en';
 type ThemeMode = 'light' | 'dark';
+type RightSidebarTab = 'comments' | 'outline' | 'insights';
+
+type HeadingItem = {
+  line: number;
+  level: number;
+  text: string;
+};
 
 function statusLabel(entry: GitStatusEntry): string {
   return `${entry.indexStatus}${entry.workTreeStatus}`.trim();
@@ -48,6 +55,26 @@ function uniquePaths(paths: string[]): string[] {
 
 function draftStorageKey(repositoryPath: string, targetPath: string): string {
   return `mymarkdown:draft:${encodeURIComponent(repositoryPath)}:${encodeURIComponent(targetPath)}`;
+}
+
+function extractHeadings(markdown: string): HeadingItem[] {
+  const lines = markdown.split(/\r?\n/);
+  const headings: HeadingItem[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (!match) {
+      continue;
+    }
+
+    headings.push({
+      line: index + 1,
+      level: match[1].length,
+      text: match[2]
+    });
+  }
+
+  return headings;
 }
 
 function loadLocale(): Locale {
@@ -85,6 +112,10 @@ export default function App(): JSX.Element {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResult, setSearchResult] = useState<MarkdownSearchResult | null>(null);
   const [controlTab, setControlTab] = useState<'sync' | 'branch' | 'search'>('sync');
+  const [showLeftSidebar, setShowLeftSidebar] = useState(true);
+  const [showRightSidebar, setShowRightSidebar] = useState(true);
+  const [rightSidebarTab, setRightSidebarTab] = useState<RightSidebarTab>('comments');
+  const [editorSnapshot, setEditorSnapshot] = useState('');
 
   const [gitIdentity, setGitIdentity] = useState<string>('unknown');
   const [markdownFiles, setMarkdownFiles] = useState<MarkdownFileEntry[]>([]);
@@ -136,6 +167,39 @@ export default function App(): JSX.Element {
   }, [activeMarkdownPath, markdownFiles, releaseScopeType]);
 
   const openCommentsInPanel = comments.filter((comment) => comment.state === 'open').length;
+  const headingItems = useMemo(() => extractHeadings(editorSnapshot), [editorSnapshot]);
+
+  const editorInsights = useMemo(() => {
+    const plain = editorSnapshot.replace(/```[\s\S]*?```/g, ' ');
+    const lines = editorSnapshot.length === 0 ? 0 : editorSnapshot.split(/\r?\n/).length;
+    const words = plain.match(/[A-Za-zÀ-ÖØ-öø-ÿ0-9_-]+/g) ?? [];
+    const wordCount = words.length;
+    const charCount = editorSnapshot.length;
+    const readingMinutes = wordCount === 0 ? 0 : Math.max(1, Math.ceil(wordCount / 220));
+
+    const frequency = new Map<string, number>();
+    words.forEach((word) => {
+      const key = word.toLowerCase();
+      if (key.length < 4) {
+        return;
+      }
+
+      frequency.set(key, (frequency.get(key) ?? 0) + 1);
+    });
+
+    const topWords = [...frequency.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    return {
+      lines,
+      wordCount,
+      charCount,
+      readingMinutes,
+      headingCount: headingItems.length,
+      topWords
+    };
+  }, [editorSnapshot, headingItems.length]);
 
   useEffect(() => {
     if (!status) {
@@ -193,6 +257,8 @@ export default function App(): JSX.Element {
         if (!suppressChangeRef.current) {
           setEditorDirty(true);
         }
+
+        setEditorSnapshot(editor.getMarkdown());
       });
 
       editorRef.current = editor;
@@ -259,6 +325,12 @@ export default function App(): JSX.Element {
           setControlTab('search');
           window.setTimeout(() => searchInputRef.current?.focus(), 0);
           break;
+        case 'toggle-left-sidebar':
+          setShowLeftSidebar((previous) => !previous);
+          break;
+        case 'toggle-right-sidebar':
+          setShowRightSidebar((previous) => !previous);
+          break;
         default:
           break;
       }
@@ -299,6 +371,7 @@ export default function App(): JSX.Element {
     suppressChangeRef.current = true;
     editorRef.current.setMarkdown(content, false);
     suppressChangeRef.current = false;
+    setEditorSnapshot(content);
     setEditorDirty(false);
   }
 
@@ -866,6 +939,27 @@ export default function App(): JSX.Element {
     setEditorMode(mode);
   }
 
+  function jumpToHeadingLine(line: number): void {
+    if (!editorRef.current || line <= 0) {
+      return;
+    }
+
+    const editor = editorRef.current as unknown as {
+      changeMode: (mode: EditorMode, withoutFocus?: boolean) => void;
+      setSelection?: (start: [number, number], end?: [number, number]) => void;
+      focus?: () => void;
+    };
+
+    editor.changeMode('markdown', false);
+    setEditorMode('markdown');
+
+    if (editor.setSelection) {
+      editor.setSelection([line, 0], [line, 0]);
+    }
+
+    editor.focus?.();
+  }
+
   async function createCommentForActiveFile(): Promise<void> {
     if (!activeMarkdownPath) {
       setNotice({
@@ -1048,7 +1142,17 @@ export default function App(): JSX.Element {
     <div className="app-shell">
       <header className="header">
         <h1>{tt('myMarkDown', 'myMarkDown')}</h1>
-        <p>{tt('Git identity', 'Git-Identität')}: {gitIdentity}</p>
+        <div className="header-tools">
+          <p>{tt('Git identity', 'Git-Identität')}: {gitIdentity}</p>
+          <div className="toggle-group">
+            <button className={showLeftSidebar ? 'toggle-active' : ''} onClick={() => setShowLeftSidebar((value) => !value)}>
+              {tt('Left Nav', 'Links Nav')}
+            </button>
+            <button className={showRightSidebar ? 'toggle-active' : ''} onClick={() => setShowRightSidebar((value) => !value)}>
+              {tt('Right Sidebar', 'Rechte Sidebar')}
+            </button>
+          </div>
+        </div>
       </header>
 
       <section className="repo-open">
@@ -1262,101 +1366,139 @@ export default function App(): JSX.Element {
         ) : null}
       </section>
 
-      <main className="main-grid">
-        <section className="panel files-panel">
-          <div className="panel-header">
-            <h2>{tt('Changed Files', 'Geänderte Dateien')}</h2>
-            <div className="file-actions">
-              <button onClick={stageSelected} disabled={busy || !selectedChangedPath}>
-                {tt('Stage Selected', 'Auswahl stagen')}
-              </button>
-              <button onClick={unstageSelected} disabled={busy || !selectedChangedPath}>
-                {tt('Unstage Selected', 'Auswahl unstage')}
-              </button>
-              <button onClick={stageAll} disabled={busy || changedFiles.length === 0}>
-                {tt('Stage All', 'Alle stagen')}
-              </button>
-              <button onClick={unstageAll} disabled={busy || changedFiles.length === 0}>
-                {tt('Unstage All', 'Alle unstage')}
+      <main
+        className={`main-grid ${showLeftSidebar ? 'with-left' : 'without-left'} ${
+          showRightSidebar ? 'with-right' : 'without-right'
+        }`}
+      >
+        {showLeftSidebar ? (
+          <aside className="panel sidebar-panel files-panel">
+            <div className="panel-header">
+              <h2>{tt('Navigation', 'Navigation')}</h2>
+            </div>
+
+            <div className="nav-block">
+              <h3>{tt('Documents', 'Dokumente')}</h3>
+              <ul className="doc-list">
+                {markdownFiles.length === 0 ? (
+                  <li className="muted">{tt('No markdown files', 'Keine Markdown-Dateien')}</li>
+                ) : (
+                  markdownFiles.map((file) => (
+                    <li key={file.path}>
+                      <button
+                        className={activeMarkdownPath === file.path ? 'selected' : ''}
+                        onClick={() => {
+                          void loadMarkdownFile(file.path);
+                        }}
+                        disabled={busy}
+                      >
+                        <span className="path">{file.path}</span>
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+
+            <div className="panel-header">
+              <h3>{tt('Changed Files', 'Geänderte Dateien')}</h3>
+              <div className="file-actions">
+                <button onClick={stageSelected} disabled={busy || !selectedChangedPath}>
+                  {tt('Stage Selected', 'Auswahl stagen')}
+                </button>
+                <button onClick={unstageSelected} disabled={busy || !selectedChangedPath}>
+                  {tt('Unstage Selected', 'Auswahl unstage')}
+                </button>
+                <button onClick={stageAll} disabled={busy || changedFiles.length === 0}>
+                  {tt('Stage All', 'Alle stagen')}
+                </button>
+                <button onClick={unstageAll} disabled={busy || changedFiles.length === 0}>
+                  {tt('Unstage All', 'Alle unstage')}
+                </button>
+              </div>
+            </div>
+
+            <div className="incoming-box">
+              <strong>{tt('Remote Delta', 'Remote-Delta')}</strong>
+              {incomingDelta ? (
+                incomingDelta.remoteRef ? (
+                  <>
+                    <p>
+                      {tt('Source', 'Quelle')}: {incomingDelta.remoteRef} | {tt('commits', 'Commits')}:{' '}
+                      {incomingDelta.incomingCommitCount} | {tt('files', 'Dateien')}:{' '}
+                      {incomingDelta.incomingFiles.length}
+                    </p>
+                    <p className={incomingDelta.conflictCandidates.length > 0 ? 'incoming-warning' : ''}>
+                      {tt('Conflict candidates', 'Konfliktkandidaten')}:{' '}
+                      {incomingDelta.conflictCandidates.length > 0
+                        ? incomingDelta.conflictCandidates.join(', ')
+                        : tt('none', 'keine')}
+                    </p>
+                  </>
+                ) : (
+                  <p>{tt('No tracking branch configured.', 'Kein Tracking-Branch konfiguriert.')}</p>
+                )
+              ) : (
+                <p>
+                  {tt(
+                    'Run fetch or Incoming Delta to inspect remote changes.',
+                    'Führe Fetch oder Eingehende Deltas aus, um Remote-Änderungen zu sehen.'
+                  )}
+                </p>
+              )}
+            </div>
+
+            {changedFiles.length === 0 ? (
+              <p className="muted">{tt('No changes.', 'Keine Änderungen.')}</p>
+            ) : (
+              <ul>
+                {changedFiles.map((file) => {
+                  const hint = codeownerHintsByPath[normalizePath(file.path)];
+                  const hasOwners = Boolean(hint && hint.owners.length > 0);
+
+                  return (
+                    <li key={`${file.path}-${file.indexStatus}-${file.workTreeStatus}`}>
+                      <button
+                        className={`${selectedChangedPath === file.path ? 'selected' : ''} ${
+                          isConflictEntry(file) ? 'selected-conflict' : ''
+                        }`.trim()}
+                        onClick={() => showDiff(file.path)}
+                      >
+                        <span className="status-pill">{statusLabel(file)}</span>
+                        <span className="path">{file.path}</span>
+                        {isConflictEntry(file) ? <span className="conflict-pill">{tt('CONFLICT', 'KONFLIKT')}</span> : null}
+                        {hasOwners ? (
+                          <span
+                            className="owner-pill"
+                            title={hint?.matchedPattern ? `CODEOWNERS pattern: ${hint.matchedPattern}` : 'CODEOWNERS'}
+                          >
+                            {hint?.owners.join(', ')}
+                          </span>
+                        ) : hasCodeownersFile ? (
+                          <span className="owner-pill owner-pill-none">{tt('unowned', 'ohne Owner')}</span>
+                        ) : null}
+                        {file.originalPath ? <span className="rename">(from {file.originalPath})</span> : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            <div className="commit-box">
+              <h3>{tt('Create Commit', 'Commit erstellen')}</h3>
+              <input
+                ref={commitInputRef}
+                value={commitMessage}
+                onChange={(event) => setCommitMessage(event.target.value)}
+                placeholder={tt('Commit message', 'Commit-Nachricht')}
+              />
+              <button onClick={commitChanges} disabled={busy || !isRepoOpen}>
+                {tt('Commit', 'Commit')}
               </button>
             </div>
-          </div>
-
-          <div className="incoming-box">
-            <strong>{tt('Remote Delta', 'Remote-Delta')}</strong>
-            {incomingDelta ? (
-              incomingDelta.remoteRef ? (
-                <>
-                  <p>
-                    {tt('Source', 'Quelle')}: {incomingDelta.remoteRef} | {tt('commits', 'Commits')}:{' '}
-                    {incomingDelta.incomingCommitCount} | {tt('files', 'Dateien')}:{' '}
-                    {incomingDelta.incomingFiles.length}
-                  </p>
-                  <p className={incomingDelta.conflictCandidates.length > 0 ? 'incoming-warning' : ''}>
-                    {tt('Conflict candidates', 'Konfliktkandidaten')}:{' '}
-                    {incomingDelta.conflictCandidates.length > 0
-                      ? incomingDelta.conflictCandidates.join(', ')
-                      : tt('none', 'keine')}
-                  </p>
-                </>
-              ) : (
-                <p>{tt('No tracking branch configured.', 'Kein Tracking-Branch konfiguriert.')}</p>
-              )
-            ) : (
-              <p>{tt('Run fetch or Incoming Delta to inspect remote changes.', 'Führe Fetch oder Eingehende Deltas aus, um Remote-Änderungen zu sehen.')}</p>
-            )}
-          </div>
-
-          {changedFiles.length === 0 ? (
-            <p>{tt('No changes.', 'Keine Änderungen.')}</p>
-          ) : (
-            <ul>
-              {changedFiles.map((file) => {
-                const hint = codeownerHintsByPath[normalizePath(file.path)];
-                const hasOwners = Boolean(hint && hint.owners.length > 0);
-
-                return (
-                  <li key={`${file.path}-${file.indexStatus}-${file.workTreeStatus}`}>
-                    <button
-                      className={`${selectedChangedPath === file.path ? 'selected' : ''} ${
-                        isConflictEntry(file) ? 'selected-conflict' : ''
-                      }`.trim()}
-                      onClick={() => showDiff(file.path)}
-                    >
-                      <span className="status-pill">{statusLabel(file)}</span>
-                      <span className="path">{file.path}</span>
-                      {isConflictEntry(file) ? <span className="conflict-pill">{tt('CONFLICT', 'KONFLIKT')}</span> : null}
-                      {hasOwners ? (
-                        <span
-                          className="owner-pill"
-                          title={hint?.matchedPattern ? `CODEOWNERS pattern: ${hint.matchedPattern}` : 'CODEOWNERS'}
-                        >
-                          {hint?.owners.join(', ')}
-                        </span>
-                      ) : hasCodeownersFile ? (
-                        <span className="owner-pill owner-pill-none">{tt('unowned', 'ohne Owner')}</span>
-                      ) : null}
-                      {file.originalPath ? <span className="rename">(from {file.originalPath})</span> : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          <div className="commit-box">
-            <h3>{tt('Create Commit', 'Commit erstellen')}</h3>
-            <input
-              ref={commitInputRef}
-              value={commitMessage}
-              onChange={(event) => setCommitMessage(event.target.value)}
-              placeholder={tt('Commit message', 'Commit-Nachricht')}
-            />
-            <button onClick={commitChanges} disabled={busy || !isRepoOpen}>
-              {tt('Commit', 'Commit')}
-            </button>
-          </div>
-        </section>
+          </aside>
+        ) : null}
 
         <section className="panel editor-panel">
           <div className="panel-header">
@@ -1418,116 +1560,208 @@ export default function App(): JSX.Element {
           </div>
         </section>
 
-        <section className="panel comments-panel">
-          <h2>{tt('Comments', 'Kommentare')} ({openCommentsInPanel} {tt('open', 'offen')})</h2>
-
-          <div className="comment-create">
-            <input
-              value={newCommentLine}
-              onChange={(event) => setNewCommentLine(event.target.value)}
-              placeholder={tt('line (optional)', 'Zeile (optional)')}
-            />
-            <textarea
-              value={newCommentText}
-              onChange={(event) => setNewCommentText(event.target.value)}
-              placeholder={tt('Create comment', 'Kommentar erstellen')}
-            />
-            <button onClick={createCommentForActiveFile} disabled={busy || !activeMarkdownPath}>
-              {tt('Add Comment', 'Kommentar hinzufügen')}
-            </button>
-          </div>
-
-          <ul className="comment-list">
-            {comments.map((comment) => (
-              <li
-                key={comment.id}
-                className={activeCommentId === comment.id ? 'active-thread' : ''}
-                onClick={() => setActiveCommentId(comment.id)}
+        {showRightSidebar ? (
+          <aside className="panel sidebar-panel comments-panel">
+            <div className="panel-header sidebar-tabs">
+              <button
+                className={rightSidebarTab === 'comments' ? 'active-tab' : ''}
+                onClick={() => setRightSidebarTab('comments')}
+                disabled={busy}
               >
-                <div className="comment-head">
-                  <strong>{comment.state.toUpperCase()}</strong>
-                  <span>{comment.author}</span>
-                  <span>{comment.anchor.line ? `${tt('line', 'Zeile')} ${comment.anchor.line}` : `${tt('line', 'Zeile')} -`}</span>
+                {tt('Comments', 'Kommentare')}
+              </button>
+              <button
+                className={rightSidebarTab === 'outline' ? 'active-tab' : ''}
+                onClick={() => setRightSidebarTab('outline')}
+                disabled={busy}
+              >
+                {tt('Outline', 'Dokument-Navigation')}
+              </button>
+              <button
+                className={rightSidebarTab === 'insights' ? 'active-tab' : ''}
+                onClick={() => setRightSidebarTab('insights')}
+                disabled={busy}
+              >
+                {tt('Insights', 'Statistiken')}
+              </button>
+            </div>
+
+            {rightSidebarTab === 'comments' ? (
+              <>
+                <h2>
+                  {tt('Comments', 'Kommentare')} ({openCommentsInPanel} {tt('open', 'offen')})
+                </h2>
+
+                <div className="comment-create">
+                  <input
+                    value={newCommentLine}
+                    onChange={(event) => setNewCommentLine(event.target.value)}
+                    placeholder={tt('line (optional)', 'Zeile (optional)')}
+                  />
+                  <textarea
+                    value={newCommentText}
+                    onChange={(event) => setNewCommentText(event.target.value)}
+                    placeholder={tt('Create comment', 'Kommentar erstellen')}
+                  />
+                  <button onClick={createCommentForActiveFile} disabled={busy || !activeMarkdownPath}>
+                    {tt('Add Comment', 'Kommentar hinzufügen')}
+                  </button>
                 </div>
-                <div className="comment-body">
-                  {comment.thread.map((message) => (
-                    <p key={message.id}>
-                      <strong>{message.author}:</strong> {message.text}
-                    </p>
+
+                <ul className="comment-list">
+                  {comments.map((comment) => (
+                    <li
+                      key={comment.id}
+                      className={activeCommentId === comment.id ? 'active-thread' : ''}
+                      onClick={() => setActiveCommentId(comment.id)}
+                    >
+                      <div className="comment-head">
+                        <strong>{comment.state.toUpperCase()}</strong>
+                        <span>{comment.author}</span>
+                        <span>
+                          {comment.anchor.line ? `${tt('line', 'Zeile')} ${comment.anchor.line}` : `${tt('line', 'Zeile')} -`}
+                        </span>
+                      </div>
+                      <div className="comment-body">
+                        {comment.thread.map((message) => (
+                          <p key={message.id}>
+                            <strong>{message.author}:</strong> {message.text}
+                          </p>
+                        ))}
+                      </div>
+                    </li>
                   ))}
+                </ul>
+
+                <div className="comment-reply">
+                  <textarea
+                    value={replyText}
+                    onChange={(event) => setReplyText(event.target.value)}
+                    placeholder={tt('Reply to selected thread', 'Auf ausgewählten Thread antworten')}
+                  />
+                  <div className="reply-actions">
+                    <button onClick={appendReply} disabled={busy || !activeCommentId}>
+                      {tt('Reply', 'Antworten')}
+                    </button>
+                    <button onClick={closeActiveComment} disabled={busy || !activeCommentId}>
+                      {tt('Close Thread', 'Thread schließen')}
+                    </button>
+                  </div>
                 </div>
-              </li>
-            ))}
-          </ul>
 
-          <div className="comment-reply">
-            <textarea
-              value={replyText}
-              onChange={(event) => setReplyText(event.target.value)}
-              placeholder={tt('Reply to selected thread', 'Auf ausgewählten Thread antworten')}
-            />
-            <div className="reply-actions">
-              <button onClick={appendReply} disabled={busy || !activeCommentId}>
-                {tt('Reply', 'Antworten')}
-              </button>
-              <button onClick={closeActiveComment} disabled={busy || !activeCommentId}>
-                {tt('Close Thread', 'Thread schließen')}
-              </button>
-            </div>
-          </div>
+                <div className="release-box">
+                  <h3>{tt('Release Gate', 'Release-Gate')}</h3>
+                  <input
+                    value={releaseId}
+                    onChange={(event) => setReleaseId(event.target.value)}
+                    placeholder={tt('release tag (e.g. release/v0.1.0)', 'Release-Tag (z. B. release/v0.1.0)')}
+                  />
+                  <input
+                    value={releaseTargetRef}
+                    onChange={(event) => setReleaseTargetRef(event.target.value)}
+                    placeholder={tt('target ref (default HEAD)', 'Ziel-Ref (Standard HEAD)')}
+                  />
+                  <select
+                    value={releaseScopeType}
+                    onChange={(event) => setReleaseScopeType(event.target.value as ReleaseScopeType)}
+                  >
+                    <option value="active">{tt('Scope: active markdown file', 'Scope: aktive Markdown-Datei')}</option>
+                    <option value="all">{tt('Scope: all markdown files', 'Scope: alle Markdown-Dateien')}</option>
+                  </select>
 
-          <div className="release-box">
-            <h3>{tt('Release Gate', 'Release-Gate')}</h3>
-            <input
-              value={releaseId}
-              onChange={(event) => setReleaseId(event.target.value)}
-              placeholder={tt('release tag (e.g. release/v0.1.0)', 'Release-Tag (z. B. release/v0.1.0)')}
-            />
-            <input
-              value={releaseTargetRef}
-              onChange={(event) => setReleaseTargetRef(event.target.value)}
-              placeholder={tt('target ref (default HEAD)', 'Ziel-Ref (Standard HEAD)')}
-            />
-            <select
-              value={releaseScopeType}
-              onChange={(event) => setReleaseScopeType(event.target.value as ReleaseScopeType)}
-            >
-              <option value="active">{tt('Scope: active markdown file', 'Scope: aktive Markdown-Datei')}</option>
-              <option value="all">{tt('Scope: all markdown files', 'Scope: alle Markdown-Dateien')}</option>
-            </select>
+                  <label className="checkbox-line">
+                    <input
+                      type="checkbox"
+                      checked={pushReleaseTag}
+                      onChange={(event) => setPushReleaseTag(event.target.checked)}
+                    />
+                    {tt('Push tag to remote after release', 'Tag nach Release zum Remote pushen')}
+                  </label>
 
-            <label className="checkbox-line">
-              <input
-                type="checkbox"
-                checked={pushReleaseTag}
-                onChange={(event) => setPushReleaseTag(event.target.checked)}
-              />
-              {tt('Push tag to remote after release', 'Tag nach Release zum Remote pushen')}
-            </label>
+                  <div className="reply-actions">
+                    <button onClick={checkReleaseGate} disabled={busy || !isRepoOpen}>
+                      {tt('Check Gate', 'Gate prüfen')}
+                    </button>
+                    <button onClick={releaseVersionNow} disabled={busy || !isRepoOpen}>
+                      {tt('Release Version', 'Version freigeben')}
+                    </button>
+                  </div>
 
-            <div className="reply-actions">
-              <button onClick={checkReleaseGate} disabled={busy || !isRepoOpen}>
-                {tt('Check Gate', 'Gate prüfen')}
-              </button>
-              <button onClick={releaseVersionNow} disabled={busy || !isRepoOpen}>
-                {tt('Release Version', 'Version freigeben')}
-              </button>
-            </div>
+                  {releaseGate ? (
+                    <div className="release-state">
+                      <p>
+                        {tt('Releasable', 'Freigabefähig')}: {releaseGate.releasable ? tt('yes', 'ja') : tt('no', 'nein')}
+                      </p>
+                      <p>{tt('Open comments', 'Offene Kommentare')}: {releaseGate.openComments}</p>
+                      <p>
+                        {tt('Blocking IDs', 'Blockierende IDs')}:{' '}
+                        {releaseGate.blockingCommentIds.length > 0
+                          ? releaseGate.blockingCommentIds.join(', ')
+                          : tt('none', 'keine')}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
 
-            {releaseGate ? (
-              <div className="release-state">
-                <p>{tt('Releasable', 'Freigabefähig')}: {releaseGate.releasable ? tt('yes', 'ja') : tt('no', 'nein')}</p>
-                <p>{tt('Open comments', 'Offene Kommentare')}: {releaseGate.openComments}</p>
-                <p>
-                  {tt('Blocking IDs', 'Blockierende IDs')}:{' '}
-                  {releaseGate.blockingCommentIds.length > 0
-                    ? releaseGate.blockingCommentIds.join(', ')
-                    : tt('none', 'keine')}
-                </p>
+            {rightSidebarTab === 'outline' ? (
+              <div className="outline-panel">
+                <h2>{tt('Document Navigation', 'Dokument-Navigation')}</h2>
+                {headingItems.length === 0 ? (
+                  <p className="muted">{tt('No headings in current document.', 'Keine Überschriften im aktuellen Dokument.')}</p>
+                ) : (
+                  <ul className="outline-list">
+                    {headingItems.map((heading) => (
+                      <li key={`${heading.line}-${heading.text}`}>
+                        <button
+                          className="outline-item"
+                          style={{ paddingLeft: `${Math.max(0, heading.level - 1) * 14 + 8}px` }}
+                          onClick={() => jumpToHeadingLine(heading.line)}
+                          disabled={busy}
+                        >
+                          <span className="outline-hash">{'#'.repeat(heading.level)}</span>
+                          <span>{heading.text}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             ) : null}
-          </div>
-        </section>
+
+            {rightSidebarTab === 'insights' ? (
+              <div className="insights-panel">
+                <h2>{tt('Statistics & Analysis', 'Statistiken & Analyse')}</h2>
+                <div className="insight-grid">
+                  <p>{tt('Lines', 'Zeilen')}: {editorInsights.lines}</p>
+                  <p>{tt('Words', 'Wörter')}: {editorInsights.wordCount}</p>
+                  <p>{tt('Characters', 'Zeichen')}: {editorInsights.charCount}</p>
+                  <p>{tt('Headings', 'Überschriften')}: {editorInsights.headingCount}</p>
+                  <p>{tt('Estimated reading time', 'Geschätzte Lesezeit')}: {editorInsights.readingMinutes} {tt('min', 'Min')}</p>
+                  <p>{tt('Open comments', 'Offene Kommentare')}: {openCommentsInPanel}</p>
+                  <p>{tt('Changed files', 'Geänderte Dateien')}: {changedFiles.length}</p>
+                  <p>{tt('Conflict files', 'Konfliktdateien')}: {conflictFiles.length}</p>
+                </div>
+                <div className="insight-words">
+                  <h3>{tt('Top Terms', 'Häufige Begriffe')}</h3>
+                  {editorInsights.topWords.length === 0 ? (
+                    <p className="muted">{tt('No significant terms yet.', 'Noch keine relevanten Begriffe.')}</p>
+                  ) : (
+                    <ul>
+                      {editorInsights.topWords.map(([word, count]) => (
+                        <li key={word}>
+                          <span>{word}</span>
+                          <strong>{count}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </aside>
+        ) : null}
       </main>
     </div>
   );

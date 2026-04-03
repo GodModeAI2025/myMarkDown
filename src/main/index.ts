@@ -138,7 +138,28 @@ function configureApplicationMenu(): void {
 
   const viewMenu: MenuItemConstructorOptions = {
     label: 'View',
-    submenu: [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }]
+    submenu: [
+      { role: 'reload' },
+      { role: 'forceReload' },
+      { role: 'toggleDevTools' },
+      { type: 'separator' },
+      {
+        label: 'Toggle Left Sidebar',
+        accelerator: 'Alt+CmdOrCtrl+1',
+        click: () => emitMenuAction('toggle-left-sidebar')
+      },
+      {
+        label: 'Toggle Right Sidebar',
+        accelerator: 'Alt+CmdOrCtrl+2',
+        click: () => emitMenuAction('toggle-right-sidebar')
+      },
+      { type: 'separator' },
+      { role: 'resetZoom' },
+      { role: 'zoomIn' },
+      { role: 'zoomOut' },
+      { type: 'separator' },
+      { role: 'togglefullscreen' }
+    ]
   };
 
   const menuTemplate: MenuItemConstructorOptions[] = [];

@@ -62,7 +62,9 @@ export type AppMenuAction =
   | 'pull'
   | 'push'
   | 'incoming-delta'
-  | 'focus-search';
+  | 'focus-search'
+  | 'toggle-left-sidebar'
+  | 'toggle-right-sidebar';
 
 export interface GitIdentity {
   name: string | null;

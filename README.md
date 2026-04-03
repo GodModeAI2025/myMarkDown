@@ -13,6 +13,9 @@ Git-native desktop Markdown workspace.
 - Explicit conflict highlighting for merge/rebase conflict status codes
 - App menu + keyboard shortcuts for core actions (Open, Refresh, Save, Commit, Fetch/Pull/Push, Search)
 - UI toggles for language (Deutsch/English) and theme (Light/Dark) with persistence
+- Apple-style 3-pane workspace: hideable left navigation + centered editor + hideable right context sidebar
+- Right context sidebar tabs: comments, heading outline navigation, statistics/analysis insights
+- View menu actions + shortcuts to toggle left/right sidebars (`Alt+CmdOrCtrl+1/2`)
 - Dedicated settings section for app configuration (language, theme, remote, default branch)
 - Local draft autosave + recovery prompt per repository/file
 - Sidecar comments in `.comments/<escaped-target>.comments.json`
