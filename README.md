@@ -20,6 +20,8 @@ Git-native desktop Markdown workspace.
 - Onboarding connect flow supports local folder + optional remote URL login (system credentials or HTTPS user/token)
 - Connect flow can open existing repo, initialize local repo, or clone remote into an empty local folder
 - Automatic fallback for systems without Git: start a local demo workspace from onboarding
+- Non-interactive Git auth checks (`GIT_TERMINAL_PROMPT=0`) to avoid hanging credential prompts
+- Credential-safe error handling with masking for URL-embedded secrets
 - Empty-repo bootstrap: initializes required project structure (markdown + folders) automatically
 - Git-friendly folder placeholders (`.gitkeep`) to represent otherwise-empty directories
 - Conflict resolution actions in-app (`Use Ours` / `Use Theirs`) with direct diff context
@@ -53,6 +55,7 @@ npm run test:main
 - Git remains the authoritative backend.
 - If Git is not installed, the app can run in demo mode with Git actions disabled.
 - Remote authentication is verified during onboarding connect when a remote URL is configured.
+- Unit tests cover remote-auth URL construction and credential masking helpers.
 - Comments are persisted only as sidecar metadata under `.comments/` and not inside final markdown files.
 - If onboarding detects a fully empty repository (no commits, no tracked/untracked files), a starter structure is created.
 - Release action creates an annotated git tag after gate checks (`open_comments == 0` in scope).

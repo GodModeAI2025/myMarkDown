@@ -820,37 +820,43 @@ export default function App(): JSX.Element {
     }
 
     setBusy(true);
-    const opened = await runQuery(
-      () => window.myMarkdown.openRepository(targetPath),
-      showOpenSuccessNotice ? `${tt('Repository opened', 'Repository geöffnet')}: ${targetPath}` : undefined
-    );
+    try {
+      const opened = await runQuery(
+        () => window.myMarkdown.openRepository(targetPath),
+        showOpenSuccessNotice ? `${tt('Repository opened', 'Repository geöffnet')}: ${targetPath}` : undefined
+      );
 
-    if (!opened) {
+      if (!opened) {
+        return false;
+      }
+
+      if (repoInput !== opened.repositoryPath) {
+        setRepoInput(opened.repositoryPath);
+      }
+
+      await refreshRuntimeInfo();
+      await refreshStatus(false);
+      if (bootstrapIfEmpty) {
+        await maybeBootstrapRepositoryIfEmpty();
+      }
+      await Promise.all([refreshMarkdownFiles(), refreshIdentity()]);
+      await refreshIncomingDelta(false);
+
+      if (persistConfigAfterOpen) {
+        persistSetupConfig({
+          repositoryPath: opened.repositoryPath,
+          remote: remoteInput.trim() || 'origin',
+          defaultBranch: branchInput.trim(),
+          remoteUrl: onboardingRemoteUrl.trim() || undefined,
+          authMode: onboardingAuthMode,
+          configuredAt: new Date().toISOString()
+        });
+      }
+
+      return true;
+    } finally {
       setBusy(false);
-      return false;
     }
-
-    await refreshRuntimeInfo();
-    await refreshStatus(false);
-    if (bootstrapIfEmpty) {
-      await maybeBootstrapRepositoryIfEmpty();
-    }
-    await Promise.all([refreshMarkdownFiles(), refreshIdentity()]);
-    await refreshIncomingDelta(false);
-
-    if (persistConfigAfterOpen) {
-      persistSetupConfig({
-        repositoryPath: targetPath,
-        remote: remoteInput.trim() || 'origin',
-        defaultBranch: branchInput.trim(),
-        remoteUrl: onboardingRemoteUrl.trim() || undefined,
-        authMode: onboardingAuthMode,
-        configuredAt: new Date().toISOString()
-      });
-    }
-
-    setBusy(false);
-    return true;
   }
 
   async function pickRepositoryPath(): Promise<string | null> {
@@ -903,47 +909,57 @@ export default function App(): JSX.Element {
             }
           : { mode: 'system' as const };
 
-    setBusy(true);
-    const connected = await runQuery(
-      () =>
-        window.myMarkdown.connectRepository({
-          localPath,
-          remoteName,
-          remoteUrl: remoteUrl || undefined,
-          defaultBranch,
-          auth: authInput
-        }),
-      tt('Repository connection established.', 'Repository-Verbindung hergestellt.')
-    );
-
-    if (!connected) {
-      setBusy(false);
+    if (remoteUrl.length > 0 && onboardingAuthMode === 'https-token' && onboardingRemoteToken.trim().length === 0) {
+      setNotice({
+        kind: 'error',
+        text: tt('Please enter a token for HTTPS login.', 'Bitte einen Token für HTTPS-Login eingeben.')
+      });
       return;
     }
 
-    setRepoInput(connected.repositoryPath);
-    setOnboardingRemoteToken('');
+    setBusy(true);
+    try {
+      const connected = await runQuery(
+        () =>
+          window.myMarkdown.connectRepository({
+            localPath,
+            remoteName,
+            remoteUrl: remoteUrl || undefined,
+            defaultBranch,
+            auth: authInput
+          }),
+        tt('Repository connection established.', 'Repository-Verbindung hergestellt.')
+      );
 
-    await refreshRuntimeInfo();
-    await refreshStatus(false);
-    await maybeBootstrapRepositoryIfEmpty();
-    await Promise.all([refreshMarkdownFiles(), refreshIdentity()]);
-    if (connected.mode === 'git') {
-      await refreshIncomingDelta(false);
+      if (!connected) {
+        return;
+      }
+
+      setRepoInput(connected.repositoryPath);
+      setOnboardingRemoteToken('');
+
+      await refreshRuntimeInfo();
+      await refreshStatus(false);
+      await maybeBootstrapRepositoryIfEmpty();
+      await Promise.all([refreshMarkdownFiles(), refreshIdentity()]);
+      if (connected.mode === 'git') {
+        await refreshIncomingDelta(false);
+      }
+
+      persistSetupConfig({
+        repositoryPath: connected.repositoryPath,
+        remote: remoteName,
+        defaultBranch: defaultBranch ?? '',
+        remoteUrl: remoteUrl || undefined,
+        authMode: onboardingAuthMode,
+        configuredAt: new Date().toISOString()
+      });
+
+      autoOpenAttemptedRef.current = true;
+      setShowOnboarding(false);
+    } finally {
+      setBusy(false);
     }
-
-    persistSetupConfig({
-      repositoryPath: connected.repositoryPath,
-      remote: remoteName,
-      defaultBranch: defaultBranch ?? '',
-      remoteUrl: remoteUrl || undefined,
-      authMode: onboardingAuthMode,
-      configuredAt: new Date().toISOString()
-    });
-
-    setBusy(false);
-    autoOpenAttemptedRef.current = true;
-    setShowOnboarding(false);
   }
 
   async function startDemoMode(): Promise<void> {

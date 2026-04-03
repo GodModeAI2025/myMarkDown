@@ -139,14 +139,14 @@ function normalizeBranchName(input?: string): string | null {
   return value.length > 0 ? value : null;
 }
 
-function sanitizeCredentialString(value: string): string {
+export function maskCredentialString(value: string): string {
   return value
     .replace(/(https?:\/\/[^:@\s]+:)([^@\s/]+)@/gi, '$1***@')
     .replace(/(oauth2:)([^@\s/]+)@/gi, '$1***@');
 }
 
 function sanitizeGitArgs(args: string[]): string[] {
-  return args.map((arg) => sanitizeCredentialString(arg));
+  return args.map((arg) => maskCredentialString(arg));
 }
 
 function ensureHttpsRemoteUrl(remoteUrl: string): URL {
@@ -172,7 +172,7 @@ function ensureHttpsRemoteUrl(remoteUrl: string): URL {
   return parsed;
 }
 
-function buildAuthRemoteUrl(remoteUrl: string, inputAuth?: ConnectRepositoryInput['auth']): string {
+export function buildAuthenticatedRemoteUrl(remoteUrl: string, inputAuth?: ConnectRepositoryInput['auth']): string {
   const normalizedRemoteUrl = remoteUrl.trim();
   if (!normalizedRemoteUrl) {
     throw new GitCommandError({
@@ -304,7 +304,7 @@ async function verifyRemoteAuthentication(
   remoteUrl: string,
   auth?: ConnectRepositoryInput['auth']
 ): Promise<void> {
-  const authUrl = buildAuthRemoteUrl(remoteUrl, auth);
+  const authUrl = buildAuthenticatedRemoteUrl(remoteUrl, auth);
   await runGit(repositoryPath, ['ls-remote', '--heads', '--tags', authUrl]);
 }
 
@@ -414,7 +414,11 @@ async function runGit(repoPath: string, args: string[]): Promise<string> {
   try {
     const { stdout } = await execFileAsync('git', ['-C', repoPath, ...args], {
       maxBuffer: 10 * 1024 * 1024,
-      encoding: 'utf8'
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0'
+      }
     });
 
     return stdout;
@@ -433,7 +437,7 @@ async function runGit(repoPath: string, args: string[]): Promise<string> {
       });
     }
 
-    const raw = sanitizeCredentialString(
+    const raw = maskCredentialString(
       [gitError.stdout, gitError.stderr, gitError.message]
       .filter((chunk): chunk is string => typeof chunk === 'string' && chunk.trim().length > 0)
       .join('\n')
@@ -549,7 +553,7 @@ export async function connectRepository(input: ConnectRepositoryInput): Promise<
       });
     }
 
-    const authUrl = buildAuthRemoteUrl(remoteUrl, input.auth);
+    const authUrl = buildAuthenticatedRemoteUrl(remoteUrl, input.auth);
     const parentPath = path.dirname(localPath);
     const folderName = path.basename(localPath);
     await runGit(parentPath, ['clone', authUrl, folderName]);
